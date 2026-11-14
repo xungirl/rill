@@ -157,3 +157,21 @@ def test_generate_preserves_input_order(tiny_model: Qwen3Model) -> None:
     engine = make_engine(tiny_model, max_num_seqs=2)
     out = engine.generate(prompts, [SamplingParams(max_tokens=10 - i, ignore_eos=True) for i in range(6)])
     assert [len(o) for o in out] == [10, 9, 8, 7, 6, 5]
+
+
+@pytest.mark.real_model
+def test_real_model_continuous_batching_matches_reference_fp32() -> None:
+    """With exact (fp32, CPU) arithmetic, continuous batching with chunked prefill and
+    preemption reproduces single-sequence greedy decoding token for token."""
+    from ember.loader import load_model, resolve_model_dir
+    from ember.tokenizer import Tokenizer
+
+    tok = Tokenizer(resolve_model_dir())
+    model = load_model(device="cpu", dtype=torch.float32)
+    texts = ["The capital of France is", "def quicksort(arr):", "List three primary colors:", "Hello, my name is"]
+    prompts = [tok.encode(t) for t in texts]
+    lengths = [20, 12, 16, 8]
+    engine = make_engine(model, num_blocks=6, block_size=8, max_num_seqs=3, max_num_batched_tokens=6)
+    out = engine.generate(prompts, [SamplingParams(max_tokens=n, ignore_eos=True) for n in lengths])
+    assert out == reference(model, prompts, lengths)
+    assert engine.scheduler.num_preemptions > 0

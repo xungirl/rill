@@ -1,0 +1,20 @@
+# CI steps from .github/workflows/ci.yml run locally on Sat Nov 14 06:07:33 PST 2026
+$ uv sync --frozen
+Checked 59 packages in 20ms
+$ uv run ruff check .
+All checks passed!
+$ uv run ruff format --check .
+54 files already formatted
+$ uv run mypy
+Success: no issues found in 48 source files
+$ HF_HUB_CACHE=<empty dir> uv run pytest -q   (what CI sees: no model download)
+......................sssss...............................s...........   [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_paged_attention.py:114: Qwen/Qwen3-0.6B not in local HF cache
+SKIPPED [2] tests/test_parity_hf.py: Qwen/Qwen3-0.6B not in local HF cache
+SKIPPED [2] tests/test_parity_hf.py:61: Qwen/Qwen3-0.6B not in local HF cache
+SKIPPED [1] tests/test_scheduler.py:162: Qwen/Qwen3-0.6B not in local HF cache
+64 passed, 6 skipped in 5.77s
+$ uv run pytest -q   (with the local model: real_model tests run too)
+......................................................................   [100%]
+70 passed in 38.60s

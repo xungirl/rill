@@ -1,0 +1,9 @@
+sequential                  41.7 tok/s (cv 0.3%)  ttft p50 84.00s  e2e p99 169.58s  tpot 23.8ms  preempt 0  same [48, 48, 48]
+static-8                   158.6 tok/s (cv 0.2%)  ttft p50 18.85s  e2e p99 44.79s  tpot 30.9ms  preempt 0  same [41, 41, 41]
+continuous-8               221.0 tok/s (cv 0.3%)  ttft p50 13.23s  e2e p99 32.17s  tpot 34.7ms  preempt 0  same [42, 42, 42]
+static-16                  236.8 tok/s (cv 1.8%)  ttft p50 10.24s  e2e p99 30.10s  tpot 43.4ms  preempt 0  same [42, 42, 42]
+continuous-16              274.9 tok/s (cv 0.3%)  ttft p50 7.05s  e2e p99 25.85s  tpot 50.9ms  preempt 0  same [37, 37, 37]
+static-32                  305.7 tok/s (cv 0.5%)  ttft p50 0.40s  e2e p99 23.31s  tpot 51.8ms  preempt 0  same [41, 41, 41]
+continuous-32              377.2 tok/s (cv 0.5%)  ttft p50 0.40s  e2e p99 18.87s  tpot 62.1ms  preempt 0  same [41, 41, 41]
+continuous-32-tight-kv     286.9 tok/s (cv 0.3%)  ttft p50 0.39s  e2e p99 24.70s  tpot 66.9ms  preempt 34  same [42, 42, 42]
+wrote /Users/xunxun/ember/results/stage3_batching.json

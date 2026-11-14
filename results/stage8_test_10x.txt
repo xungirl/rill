@@ -1,0 +1,22 @@
+# Full test suite (incl. real-model tests) run 10 times in a row, Sat Nov 14 06:33:06 PST 2026, load1 { 1.15 1.54 2.14 }
+== run 1
+70 passed in 40.61s
+== run 2
+70 passed in 39.17s
+== run 3
+70 passed in 39.08s
+== run 4
+70 passed in 38.69s
+== run 5
+70 passed in 39.02s
+== run 6
+70 passed in 38.72s
+== run 7
+70 passed in 38.17s
+== run 8
+70 passed in 38.77s
+== run 9
+70 passed in 38.31s
+== run 10
+70 passed in 38.67s
+== end Sat Nov 14 06:39:52 PST 2026

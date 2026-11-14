@@ -1,0 +1,8 @@
+latency_one_at_a_time/cache_off          ttft mean   360.5 ms  tok/s   27.7  hit 0.00  prefill computed 19646
+latency_one_at_a_time/cache_on           ttft mean    50.3 ms  tok/s   37.7  hit 0.93  prefill computed 1294
+throughput_batch16/cache_off             ttft mean  7559.8 ms  tok/s   63.1  hit 0.00  prefill computed 19646
+throughput_batch16/cache_on              ttft mean  3135.0 ms  tok/s  153.5  hit 0.84  prefill computed 3070
+latency_one_at_a_time outputs identical cache on vs off: 29/32
+throughput_batch16 outputs identical cache on vs off: 32/32
+wrote /Users/xunxun/ember/results/stage4_prefix_cache.json
+DONE

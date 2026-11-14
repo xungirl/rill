@@ -72,6 +72,11 @@ def make_workload(n: int, seed: int) -> list[RequestSpec]:
     return specs
 
 
+# Ollama streams Qwen3's (hidden) thinking tokens as chunks with empty "text"; for it,
+# TTFT is taken at the first chunk that carries a choice at all. Set by bench_serving.
+TTFT_ON_ANY_CHUNK = False
+
+
 async def send(client: httpx.AsyncClient, url: str, model: str, spec: RequestSpec, t0: float) -> RequestResult:
     body = {
         "model": model,
@@ -100,7 +105,7 @@ async def send(client: httpx.AsyncClient, url: str, model: str, spec: RequestSpe
                 if event.get("usage"):
                     usage = event["usage"]
                 for choice in event.get("choices", []):
-                    if choice.get("text"):
+                    if choice.get("text") or (TTFT_ON_ANY_CHUNK and "text" in choice):
                         chunks += 1
                         if math.isnan(ttft):
                             ttft = time.perf_counter() - start

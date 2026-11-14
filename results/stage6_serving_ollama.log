@@ -1,0 +1,28 @@
+[ollama rep0] rate  0.50:   64.8 tok/s 0.58 req/s  ttft p50/p99 0.04/0.06s  tpot p50 14ms  e2e p99 3.4s  err 0  load1 2.22
+[ollama rep0] rate  1.00:  132.1 tok/s 1.25 req/s  ttft p50/p99 0.05/0.52s  tpot p50 26ms  e2e p99 5.4s  err 0  load1 2.32
+[ollama rep0] rate  2.00:  200.5 tok/s 1.83 req/s  ttft p50/p99 0.69/5.36s  tpot p50 34ms  e2e p99 11.2s  err 0  load1 2.3
+[ollama rep0] rate  3.00:  222.1 tok/s 2.08 req/s  ttft p50/p99 6.13/15.55s  tpot p50 32ms  e2e p99 21.4s  err 0  load1 2.09
+[ollama rep0] rate  4.00:  230.5 tok/s 2.13 req/s  ttft p50/p99 15.29/34.99s  tpot p50 32ms  e2e p99 40.1s  err 0  load1 2.32
+[ollama rep0] rate  6.00:  209.7 tok/s 1.81 req/s  ttft p50/p99 33.50/85.93s  tpot p50 35ms  e2e p99 91.8s  err 0  load1 3.36
+[ollama rep0] closed c=1:   91.6 tok/s  ttft p50 0.15s  tpot p50 9ms  err 0
+[ollama rep0] closed c=8:  203.0 tok/s  ttft p50 0.10s  tpot p50 37ms  err 0
+[ollama rep0] closed c=32:  196.6 tok/s  ttft p50 11.45s  tpot p50 35ms  err 0
+[ollama rep1] rate  0.50:   53.2 tok/s 0.47 req/s  ttft p50/p99 0.13/0.28s  tpot p50 10ms  e2e p99 4.5s  err 0  load1 3.09
+[ollama rep1] rate  1.00:  104.9 tok/s 0.83 req/s  ttft p50/p99 0.06/0.25s  tpot p50 28ms  e2e p99 7.6s  err 0  load1 2.99
+[ollama rep1] rate  2.00:  177.2 tok/s 1.45 req/s  ttft p50/p99 0.14/1.86s  tpot p50 34ms  e2e p99 13.2s  err 0  load1 3.14
+[ollama rep1] rate  3.00:  221.0 tok/s 1.81 req/s  ttft p50/p99 3.65/17.27s  tpot p50 32ms  e2e p99 23.7s  err 0  load1 3.59
+[ollama rep1] rate  4.00:  182.7 tok/s 1.54 req/s  ttft p50/p99 18.80/56.22s  tpot p50 40ms  e2e p99 62.3s  err 0  load1 2.33
+[ollama rep1] rate  6.00:  207.8 tok/s 1.81 req/s  ttft p50/p99 38.91/85.80s  tpot p50 36ms  e2e p99 90.5s  err 0  load1 3.88
+[ollama rep1] closed c=1:   95.4 tok/s  ttft p50 0.12s  tpot p50 9ms  err 0
+[ollama rep1] closed c=8:  204.8 tok/s  ttft p50 0.10s  tpot p50 37ms  err 0
+[ollama rep1] closed c=32:  218.1 tok/s  ttft p50 12.56s  tpot p50 35ms  err 0
+[ollama rep2] rate  0.50:   58.8 tok/s 0.51 req/s  ttft p50/p99 0.12/0.53s  tpot p50 12ms  e2e p99 7.6s  err 0  load1 2.88
+[ollama rep2] rate  1.00:  105.2 tok/s 0.91 req/s  ttft p50/p99 0.06/0.15s  tpot p50 17ms  e2e p99 7.0s  err 0  load1 2.37
+[ollama rep2] rate  2.00:  178.2 tok/s 1.49 req/s  ttft p50/p99 0.11/2.75s  tpot p50 34ms  e2e p99 9.3s  err 0  load1 3.08
+[ollama rep2] rate  3.00:  208.8 tok/s 1.74 req/s  ttft p50/p99 4.63/18.16s  tpot p50 35ms  e2e p99 23.2s  err 0  load1 2.08
+[ollama rep2] rate  4.00:  205.0 tok/s 1.72 req/s  ttft p50/p99 17.67/44.99s  tpot p50 36ms  e2e p99 50.3s  err 0  load1 2.46
+[ollama rep2] rate  6.00:  205.0 tok/s 1.77 req/s  ttft p50/p99 38.52/86.84s  tpot p50 36ms  e2e p99 93.8s  err 0  load1 2.37
+[ollama rep2] closed c=1:   92.1 tok/s  ttft p50 0.12s  tpot p50 10ms  err 0
+[ollama rep2] closed c=8:  190.0 tok/s  ttft p50 0.10s  tpot p50 37ms  err 0
+[ollama rep2] closed c=32:  203.0 tok/s  ttft p50 12.25s  tpot p50 37ms  err 0
+wrote /Users/xunxun/ember/results/stage6_serving_ollama.json

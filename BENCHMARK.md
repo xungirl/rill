@@ -145,3 +145,89 @@ fp32 model the outputs are identical in all cases, including a 40-block pool tha
 for the first request after start-up), an SSE stream with `include_usage`, a stop-sequence request
 (`" 7"` → text ends at `" 6,"`, `finish_reason: "stop"`), and the Prometheus metrics it produced. Serving
 performance is measured under load in Stage 6.
+
+## Stage 6 — load testing the HTTP servers
+
+Commands (each: start server, warm up, sweep, 3 repeats with the load gate, stop server):
+```bash
+uv run python -m benchmarks.bench_serving --backend ember --port 8100 --rates 0.5,1,2,3,4,6 --concurrency 1,8,32 \
+    --repeats 3 --server-args "--max-inflight 512"
+uv run python -m benchmarks.bench_serving --backend hf --port 8101 --rates 0.2,0.5,1 --concurrency 1 --repeats 3 \
+    --min-requests 16
+OLLAMA_NUM_PARALLEL=8 ollama serve &   # Ollama 0.34.4 from Homebrew, model qwen3:0.6b (Q4_K_M GGUF, 522 MB)
+uv run python -m benchmarks.bench_serving --backend ollama --rates 0.5,1,2,3,4,6 --concurrency 1,8,32 --repeats 3
+uv run python -m benchmarks.summarize_serving results/stage6_serving_*.json
+```
+Workload (`benchmarks/loadgen.py`, synthetic, seeded; ShareGPT was not downloaded): prompt length
+LogNormal(ln 160, 0.6) clipped [16, 1024], output length LogNormal(ln 100, 0.6) clipped [16, 400]; prompt text is
+decoded random vocabulary ids. Measured averages: ~215 prompt / ~110 output tokens per request (ember). Each
+repeat uses a different seed, so ± includes workload variation. Open loop = Poisson arrivals; points send
+max(30, 40·λ) requests. TTFT = send → first streamed text chunk; TPOT = (e2e − TTFT)/(tokens − 1). req/s is
+completed requests / (first send → last finish), so it sits below λ at low load (the tail is included).
+Everything on one laptop over localhost; the load generator shares the CPU with the server.
+
+**ember** (`results/stage6_serving_ember.json`, 3 repeats)
+
+| load | output tok/s (mean ± sd) | req/s | TTFT p50 | TTFT p99 | TPOT p50 | TPOT p99 | e2e p50 | e2e p99 | errors |
+|---|---|---|---|---|---|---|---|---|---|
+| λ=0.5 req/s | 56.7 ± 5.6 | 0.50 | 0.15 s | 0.43 s | 34 ms | 43 ms | 3.32 s | 10.66 s | 0 |
+| λ=1 req/s | 103.3 ± 12.8 | 0.90 | 0.07 s | 0.28 s | 37 ms | 53 ms | 4.02 s | 11.79 s | 0 |
+| λ=2 req/s | 162.3 ± 8.7 | 1.39 | 0.14 s | 0.47 s | 77 ms | 113 ms | 7.96 s | 22.67 s | 0 |
+| λ=3 req/s | 187.3 ± 2.9 | 1.62 | 3.23 s | 15.52 s | 145 ms | 171 ms | 20.10 s | 43.41 s | 0 |
+| λ=4 req/s | 198.9 ± 6.3 | 1.73 | 13.46 s | 39.18 s | 149 ms | 174 ms | 30.84 s | 60.59 s | 0 |
+| λ=6 req/s | 201.4 ± 6.7 | 1.74 | 35.31 s | 79.43 s | 148 ms | 177 ms | 53.04 s | 98.29 s | 0 |
+| closed, 1 users | 37.3 ± 0.4 | 0.33 | 0.10 s | 0.38 s | 26 ms | 28 ms | 2.68 s | 8.03 s | 0 |
+| closed, 8 users | 156.8 ± 9.7 | 1.38 | 0.10 s | 0.13 s | 45 ms | 49 ms | 4.58 s | 13.42 s | 0 |
+| closed, 32 users | 197.1 ± 6.7 | 1.72 | 0.49 s | 0.85 s | 133 ms | 158 ms | 13.03 s | 32.83 s | 0 |
+
+load1 at the start of each point: 1.2–2.4
+
+**hf** (`results/stage6_serving_hf.json`, 3 repeats)
+
+| load | output tok/s (mean ± sd) | req/s | TTFT p50 | TTFT p99 | TPOT p50 | TPOT p99 | e2e p50 | e2e p99 | errors |
+|---|---|---|---|---|---|---|---|---|---|
+| λ=0.2 req/s | 26.4 ± 3.2 | 0.22 | 0.34 s | 3.21 s | 17 ms | 18 ms | 2.68 s | 6.87 s | 0 |
+| λ=0.5 req/s | 50.0 ± 6.9 | 0.43 | 5.91 s | 11.46 s | 17 ms | 18 ms | 8.11 s | 12.52 s | 0 |
+| λ=1 req/s | 54.1 ± 0.7 | 0.47 | 22.22 s | 44.00 s | 17 ms | 19 ms | 23.26 s | 45.81 s | 0 |
+| closed, 1 users | 54.9 ± 0.2 | 0.45 | 0.13 s | 1.74 s | 17 ms | 18 ms | 1.96 s | 5.47 s | 0 |
+
+load1 at the start of each point: 1.3–2.4
+
+**ollama** (`results/stage6_serving_ollama.json`, 3 repeats)
+
+| load | output tok/s (mean ± sd) | req/s | TTFT p50 | TTFT p99 | TPOT p50 | TPOT p99 | e2e p50 | e2e p99 | errors |
+|---|---|---|---|---|---|---|---|---|---|
+| λ=0.5 req/s | 58.9 ± 5.8 | 0.52 | 0.10 s | 0.29 s | 12 ms | 30 ms | 1.37 s | 5.15 s | 0 |
+| λ=1 req/s | 114.1 ± 15.6 | 1.00 | 0.06 s | 0.30 s | 23 ms | 34 ms | 2.09 s | 6.66 s | 0 |
+| λ=2 req/s | 185.3 ± 13.2 | 1.59 | 0.31 s | 3.32 s | 34 ms | 42 ms | 4.17 s | 11.21 s | 0 |
+| λ=3 req/s | 217.3 ± 7.4 | 1.88 | 4.80 s | 16.99 s | 33 ms | 46 ms | 9.06 s | 22.75 s | 0 |
+| λ=4 req/s | 206.1 ± 23.9 | 1.80 | 17.25 s | 45.40 s | 36 ms | 51 ms | 20.93 s | 50.91 s | 0 |
+| λ=6 req/s | 207.5 ± 2.4 | 1.79 | 36.98 s | 86.19 s | 35 ms | 47 ms | 41.46 s | 92.06 s | 0 |
+| closed, 1 users | 93.0 ± 2.1 | 0.82 | 0.13 s | 0.48 s | 9 ms | 10 ms | 1.08 s | 2.85 s | 0 |
+| closed, 8 users | 199.3 ± 8.1 | 1.76 | 0.10 s | 0.13 s | 37 ms | 40 ms | 3.69 s | 11.00 s | 0 |
+| closed, 32 users | 205.9 ± 11.0 | 1.79 | 12.09 s | 14.52 s | 36 ms | 41 ms | 15.14 s | 22.09 s | 0 |
+
+load1 at the start of each point: 2.1–3.9
+
+### Reading the numbers
+- **Saturation knee (ember)**: between λ=2 and λ=3 req/s. At λ=2 TTFT p99 is 0.47 s; at λ=3 it is 15.5 s and
+  climbs linearly with λ afterwards (queueing), while throughput plateaus at ~200 tok/s / ~1.74 req/s.
+  This workload is prefill-heavy (~2 prompt tokens per output token), so the plateau is far below the 517.8 tok/s
+  decode-only number of Stage 3.
+- **vs naive HF server**: peak sustained throughput 201.4 vs 54.1 tok/s (**3.7×**); HF saturates already at
+  ~0.47 req/s, and at λ=1 its TTFT p50 is 22.2 s vs ember's 0.07 s.
+- **vs Ollama (llama.cpp Metal, 4-bit Q4_K_M weights, 8 parallel slots)**: not like-for-like (ember runs fp16
+  weights in eager PyTorch). Ollama peaks at 217.3 tok/s (ember reaches ~93% of that) and is clearly better at
+  low concurrency: single-user TPOT 9 ms vs ember 26 ms. Ollama's Qwen3 runs in thinking mode via its
+  chat template and streams hidden thinking tokens as empty-text chunks; for Ollama TTFT is taken at the first
+  chunk (`loadgen.TTFT_ON_ANY_CHUNK`), and `ignore_eos` is not supported (outputs still averaged ~111 tokens).
+- **Single-stream latency is ember's weak spot**: HF `generate` (17 ms TPOT) beats ember's server at
+  concurrency 1 (26 ms) even though an isolated ember decode step is not slower (21.0 ms vs 22.6 ms for a bare HF
+  forward with cache, scratch measurement, not committed). The difference is per-step Python overhead in the
+  engine (scheduling, metadata, sampling bookkeeping) plus the engine-thread/event-loop hand-off and GIL sharing.
+- **Bug found by this benchmark**: the first ember sweep saturated at ~128 tok/s with TTFT p99 16 s at λ=2
+  (`results/stage6_serving_ember_before_split_attention.log`). Cause: mixed prefill+decode steps padded every
+  decode row to the prefill chunk length inside one SDPA call. Splitting decode and prefill rows into separate
+  attention groups fixed it (mixed 1024-chunk step 4479.9 → 687.5 ms, `results/micro_mixed_step.json`).
+  Note: the Stage 3/4 tables above were measured before this fix (their workloads are decode-dominated or
+  sequential, so they are mostly unaffected; Stage 8 reruns them on the final code).

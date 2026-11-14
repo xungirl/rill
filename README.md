@@ -90,6 +90,23 @@ continuous batching (work in progress, see Project Journey). Runs on an Apple-si
 - **Problems / fixes**: a "failing" back-pressure test was the server correctly treating a garbage-collected
   `iter_lines()` iterator as a client disconnect — the test was fixed, not the server.
 
+### 6. Load testing & baselines
+- **Goal**: measure the server like a service: throughput and TTFT/TPOT/e2e percentiles vs arrival rate, find
+  the saturation knee, compare against baselines on the same laptop.
+- **Decision & alternatives**: own async load generator with **open-loop Poisson arrivals** (exposes queueing;
+  closed-loop clients slow down with the server and hide overload) plus closed-loop points; synthetic seeded
+  log-normal lengths (ShareGPT not downloaded — stated, not hidden); every point 3×, load-gated. Baselines: a
+  naive `transformers.generate` server and Ollama (Homebrew; 522 MB Q4_K_M model) — no llama.cpp build needed.
+- **Built**: `benchmarks/loadgen.py`, `benchmarks/bench_serving.py`, `benchmarks/hf_server.py`,
+  `benchmarks/summarize_serving.py`.
+- **Verified**: zero errors in all 66 measured points; repeat-to-repeat sd reported per point.
+- **Measured**: ember knee between 2 and 3 req/s (TTFT p99 0.47 s → 15.5 s); plateau **201.4 tok/s** vs naive HF
+  server **54.1 tok/s (3.7×)**; Ollama (4-bit, llama.cpp Metal) 217.3 tok/s — ember reaches ~93% of it with fp16
+  eager PyTorch, but Ollama's single-user TPOT is 9 ms vs ember's 26 ms.
+- **Problems / fixes**: the first sweep collapsed at 128 tok/s. Mixed prefill+decode steps padded all decode
+  rows to the prefill chunk length inside SDPA; decode and prefill rows are now attended in separate groups
+  (mixed-step forward 4479.9 → 687.5 ms). The pre-fix log is kept in `results/`.
+
 ### Key metrics
 
 | metric | value | how measured | source |
@@ -105,9 +122,13 @@ continuous batching (work in progress, see Project Journey). Runs on an Apple-si
 | K/V gather fix (56 gathers, B=32) | 81.0 → 12.7 ms | `benchmarks/micro_gather.py` | `results/micro_gather.json` |
 | prefix cache: TTFT of hits, 614-token prompts | 361.5 → 39.5 ms (n=3, cv ≤ 0.5%) | `benchmarks/bench_prefix.py` | `results/stage4_prefix_cache.json` |
 | prefix cache: batched throughput (B=16) | 48.6 → 151.0 tok/s | same | `results/stage4_prefix_cache.json` |
+| HTTP serving plateau, ember vs naive HF server | 201.4 vs 54.1 tok/s (3.7×), n=3 | `benchmarks/bench_serving.py` | `results/stage6_serving_{ember,hf}.json` |
+| ember saturation knee (open-loop, ~215-in/110-out tokens) | λ 2→3 req/s: TTFT p99 0.47 s → 15.5 s | same | `results/stage6_serving_ember.json` |
+| ember vs Ollama Q4_K_M peak / single-user TPOT | 201.4 vs 217.3 tok/s / 26 vs 9 ms | same | `results/stage6_serving_ollama.json` |
+| mixed prefill+decode step fix (1024 chunk + 31 decodes) | 4479.9 → 687.5 ms | `benchmarks/micro_mixed_step.py` | `results/micro_mixed_step.json` |
 
 ### Next steps
-Load testing (6) → sampling & int8 (7) → ops polish (8).
+Sampling & int8 (7) → ops polish (8).
 
 ## How to run
 
@@ -136,6 +157,10 @@ The real-model tests/benchmarks expect `Qwen/Qwen3-0.6B` in the local Hugging Fa
 ## Limitations
 - Only the Qwen3 dense architecture (no MoE, no rope scaling / sliding window).
 - Pure PyTorch eager; no custom kernels, no CUDA graphs. Batch-1 decode is launch-overhead bound.
+- Single-stream latency: per-step Python overhead (scheduler, metadata, engine-thread hand-off) makes ember's
+  concurrency-1 TPOT (26 ms) worse than HF `generate` (17 ms) and Ollama (9 ms); ember only wins under load.
+- Prefill is slow (eager fp16 matmuls on the M2 GPU): on prefill-heavy traffic the plateau is ~200 tok/s, far
+  below the 518 tok/s decode-only rate.
 - Paged attention gathers each sequence's K/V into a padded tensor every layer (no fused paged-attention kernel
   on MPS): extra memory traffic proportional to batch × longest context.
 - fp16 results depend slightly on batch composition (not batch-invariant); greedy outputs can differ from a

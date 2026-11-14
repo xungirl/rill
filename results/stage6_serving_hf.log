@@ -1,0 +1,13 @@
+[hf rep0] rate  0.20:   30.0 tok/s 0.25 req/s  ttft p50/p99 0.34/3.35s  tpot p50 17ms  e2e p99 5.1s  err 0  load1 1.72
+[hf rep0] rate  0.50:   52.8 tok/s 0.46 req/s  ttft p50/p99 6.26/10.93s  tpot p50 17ms  e2e p99 11.2s  err 0  load1 1.32
+[hf rep0] rate  1.00:   54.0 tok/s 0.51 req/s  ttft p50/p99 23.70/44.52s  tpot p50 17ms  e2e p99 46.8s  err 0  load1 2.02
+[hf rep0] closed c=1:   54.8 tok/s  ttft p50 0.13s  tpot p50 17ms  err 0
+[hf rep1] rate  0.20:   23.8 tok/s 0.19 req/s  ttft p50/p99 0.29/2.43s  tpot p50 17ms  e2e p99 8.3s  err 0  load1 1.79
+[hf rep1] rate  0.50:   42.1 tok/s 0.38 req/s  ttft p50/p99 5.79/11.06s  tpot p50 17ms  e2e p99 13.0s  err 0  load1 2.3
+[hf rep1] rate  1.00:   53.4 tok/s 0.42 req/s  ttft p50/p99 20.40/46.71s  tpot p50 17ms  e2e p99 48.4s  err 0  load1 2.42
+[hf rep1] closed c=1:   54.7 tok/s  ttft p50 0.14s  tpot p50 17ms  err 0
+[hf rep2] rate  0.20:   25.5 tok/s 0.20 req/s  ttft p50/p99 0.37/3.85s  tpot p50 17ms  e2e p99 7.2s  err 0  load1 2.12
+[hf rep2] rate  0.50:   55.2 tok/s 0.46 req/s  ttft p50/p99 5.68/12.38s  tpot p50 17ms  e2e p99 13.3s  err 0  load1 2.14
+[hf rep2] rate  1.00:   54.8 tok/s 0.47 req/s  ttft p50/p99 22.57/40.76s  tpot p50 17ms  e2e p99 42.2s  err 0  load1 1.87
+[hf rep2] closed c=1:   55.1 tok/s  ttft p50 0.12s  tpot p50 17ms  err 0
+wrote /Users/xunxun/ember/results/stage6_serving_hf.json

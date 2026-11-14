@@ -272,3 +272,50 @@ in-process ASGI transport 模拟不出「客户端关闭 TCP 连接」。`tests/
    A：每个请求结束一行 JSON：request_id、status、finish_reason、prompt/completion token 数、TTFT、e2e。可以直接被日志系统解析聚合。
 8. **Q：这个服务器的扩展性瓶颈在哪？**
    A：单进程单 GPU；引擎线程和 Python GIL：HTTP 处理、反分词和引擎调度共享 GIL，高并发时 CPU 侧开销会和 step 抢 GIL。生产系统（vLLM）把 API server 和引擎拆成不同进程用 ZMQ 通信，就是为了这个。
+
+---
+
+## Stage 6 — 压测与基准（Load testing & benchmarks）
+
+### 读代码顺序
+`benchmarks/common.py` → `benchmarks/loadgen.py` → `benchmarks/hf_server.py` → `benchmarks/bench_serving.py` → `BENCHMARK.md` Stage 6 节
+
+### 1. `benchmarks/loadgen.py`
+**(a) 骨架**：`make_workload`（种子固定的 log-normal 输入/输出长度）→ `send`（一个流式请求，记录首个非空文本块的时间 = TTFT、结束时间、`usage` 里的真实 token 数）→ `open_loop`（泊松到达）/ `closed_loop`（C 个用户轮流发）→ `summarize_run`（吞吐 + TTFT/TPOT/e2e 的 p50/p90/p99）。
+**(b) 为什么**：
+- **开环 vs 闭环（open-loop vs closed-loop）**：闭环负载会「自动减速」——服务器慢了，用户发得也慢，永远不会过载，所以测不出排队；开环（泊松到达，间隔 ~ Exp(1/λ)）不管服务器快慢照样到达，过了容量队列就线性增长，TTFT 爆炸——这才是真实流量的样子，也是找「拐点（knee）」的方法。
+- **泊松过程**：大量独立用户的到达近似泊松；指数分布间隔。
+- **`ignore_eos` + 用 `usage` 计数**：控制输出长度，各后端可比；不支持 ignore_eos 的后端（Ollama）会提前停，所以永远用服务器报告的真实 token 数算吞吐。
+- **合成数据要写清楚来源**：没有下载 ShareGPT，用 log-normal 并写明参数。
+**(c) 语法**：`asyncio.gather` 并发等待；`httpx.AsyncClient.stream` + `aiter_lines()` 读 SSE。
+
+### 2. `benchmarks/hf_server.py`
+朴素基线：`transformers.generate` + `TextIteratorStreamer` + 全局 `asyncio.Lock`（一次一个请求）。这就是「随手写的服务」会有的样子，对比它能看出调度 + 批处理带来的提升。
+
+### 3. `benchmarks/bench_serving.py`
+起服务器子进程 → 等 `/health` → 预热 → 每个到达率跑一次（每点请求数 = max(30, λ × 40)，保证高负载下能到达稳态）→ 每次之前 `wait_for_quiet` 负载门控 → 重复 3 次 → 关服务器。
+
+### Stage 6 实测（`results/stage6_serving_*.json`，3 次重复）
+- ember 拐点在 λ=2 到 3 req/s 之间：λ=2 时 TTFT p99 0.47 s，λ=3 时 15.5 s；吞吐平台 ~201 tok/s（~1.74 req/s）。
+- 朴素 HF 服务器峰值 54.1 tok/s → ember **3.7 倍**；Ollama（4-bit Q4_K_M + llama.cpp Metal kernel）217.3 tok/s，ember 达到其 ~93%，但单用户 TPOT Ollama 9 ms vs ember 26 ms。
+- **这个压测抓到一个真 bug**：第一次扫描只有 ~128 tok/s。原因是 prefill 块和 decode 混在一个 SDPA 调用里，decode 行被 padding 到 prefill 块长度（1 个 1024 块 + 31 个 decode ≈ 32 倍注意力计算）。改成 decode 行和 prefill 行分组各自 padding 后，混合步从 4479.9 ms 降到 687.5 ms。这也是题目要求「prefill/decode 分开」的真正原因。
+
+### Stage 6 面试题
+1. **Q：怎么找到服务的饱和点（knee）？**
+   A：开环扫到达率 λ，画吞吐和 TTFT 对 λ 的曲线：吞吐随 λ 线性增长直到容量上限后变平；TTFT 在接近上限时开始急剧上升（排队）。两者拐的地方就是 knee，生产上把 SLO 设在 knee 之前。
+2. **Q：为什么不能只用闭环测？**
+   A：闭环中服务器越慢请求越少（coordinated omission 的一种），会严重低估过载时的延迟。
+3. **Q：p99 为什么比均值重要？**
+   A：用户体验和 SLO 都看尾部；批处理系统里少数被长 prefill 卡住、被抢占、排队久的请求决定 p99。
+4. **Q：TPOT 随负载怎么变？为什么？**
+   A：负载越高，running batch 越大，每步要服务的序列越多，每步变慢 → TPOT 上升；这是用延迟换吞吐。
+5. **Q：和 HF generate 基线比，提升来自哪里？**
+   A：（1）连续批处理让一次权重读取服务多个序列；（2）分页 KV 让并发数不受预分配限制；（3）调度器在请求结束的那一步就补位。HF 基线一次一个请求，过载时 TTFT 全是排队时间。
+6. **Q：你的 benchmark 有哪些局限？**
+   A：单机单卡 MPS、localhost（没有网络延迟）；合成长度分布不是真实 ShareGPT；随机 token 拼的 prompt 没有语义；机器上同时有别的进程（所以记录 load、门控、重复 3 次）；Ollama 用的是量化 GGUF 权重和 llama.cpp 的 Metal kernel，不是同精度对比。
+7. **Q：怎么保证结果可复现、可信？**
+   A：固定随机种子、记录机器/日期/负载、原始 JSON 全部入库、每个关键点重复 3 次报告变异系数、命令写在 BENCHMARK.md；数字只来自实际运行。
+8. **Q：讲一个你通过 benchmark 发现的问题。**
+   A：见上：开环压测吞吐远低于离线 decode 吞吐 → 用 micro benchmark 复现单个混合步 → 定位到 decode 行被 pad 到 prefill 长度 → 分组 attention → 4479.9 → 687.5 ms，拐点从 λ<2 移到 2~3 req/s。前后日志都在 `results/`。
+9. **Q：Little's law 在这里怎么用？**
+   A：L = λ × W：系统中平均在途请求数 = 到达率 × 平均停留时间。比如已知容量下的 e2e，可以估算需要多大的 `max_num_seqs` / `max_inflight`（见 docs/CAPACITY.md）。

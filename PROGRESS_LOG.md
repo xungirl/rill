@@ -62,3 +62,16 @@
   `is_disconnected()` watcher to streaming responses; it is unnecessary (Starlette cancels the body iterator on
   disconnect) and was removed.
 - Port 8000 is used by another app on this machine → smoke test and benchmarks use 8100/8101.
+
+## 2026-11-14 — Stage 6: load testing
+- Own load generator (open-loop Poisson + closed-loop, SSE, usage-based token counts), naive HF baseline server,
+  sweep orchestrator with load gating, summarizer.
+- **Found a real perf bug**: first ember sweep saturated at ~128 tok/s with TTFT p99 16 s at λ=2. Mixed
+  prefill+decode steps padded every decode row to the prefill chunk length in one SDPA call (~32× attention work
+  with one 1024-token chunk + 31 decodes). Fixed by attending decode rows and prefill rows in separate groups:
+  mixed-step forward 4479.9 → 687.5 ms. Rerun: knee between λ=2 and 3 req/s, plateau ~201 tok/s.
+- Baselines: HF `generate` server (one at a time) peaks at 54.1 tok/s → ember 3.7×. Ollama 0.34.4
+  (qwen3:0.6b Q4_K_M, 522 MB pull) peaks at 217.3 tok/s and has much lower single-user TPOT (9 vs 26 ms).
+- Problems: port 8000 occupied by an unrelated app → 8100/8101; Ollama hides Qwen3 thinking tokens as empty
+  chunks → TTFT measured at first chunk for Ollama (documented); a shell `&&` chain skipped a `mv` because ruff
+  failed, harmless (log was regenerated).

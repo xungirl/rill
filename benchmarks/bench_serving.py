@@ -23,6 +23,7 @@ from typing import Any
 
 import httpx
 
+from benchmarks import loadgen
 from benchmarks.common import load1, wait_for_quiet, write_result
 from benchmarks.loadgen import closed_loop, make_workload, open_loop, summarize_run
 
@@ -61,6 +62,7 @@ def main() -> None:
     url = f"http://127.0.0.1:{port}"
     model = args.model or ("qwen3:0.6b" if args.backend == "ollama" else "Qwen/Qwen3-0.6B")
 
+    loadgen.TTFT_ON_ANY_CHUNK = args.backend == "ollama"
     proc = None
     if args.backend in SERVERS:
         cmd = [c.format(port=port) for c in SERVERS[args.backend]] + args.server_args.split()

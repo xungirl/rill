@@ -26,6 +26,7 @@ class EngineConfig:
     block_size: int = 16
     num_blocks: int | None = None  # if None, derived from kv_cache_gib
     kv_cache_gib: float = 2.0
+    enable_prefix_caching: bool = True
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
 
 
@@ -58,7 +59,7 @@ class LLMEngine:
             cfg, int(self.config.kv_cache_gib * 2**30), self.config.block_size, dtype
         )
         self.cache = PagedKVCache(cfg, num_blocks, self.config.block_size, dtype, device)
-        self.block_manager = BlockManager(num_blocks, self.config.block_size)
+        self.block_manager = BlockManager(num_blocks, self.config.block_size, self.config.enable_prefix_caching)
         self.scheduler = Scheduler(self.config.scheduler, self.block_manager)
         self.runner = ModelRunner(model, self.cache)
         self.eos_ids = frozenset(cfg.eos_token_ids)
@@ -97,6 +98,7 @@ class LLMEngine:
             seq = item.seq
             completes = item.completes_sequence
             seq.num_computed_tokens += item.num_new_tokens
+            self.block_manager.cache_full_blocks(seq)  # K/V now written -> shareable
             if seq.num_output_tokens == 0:
                 self.stats.prefill_tokens += item.num_new_tokens
             else:

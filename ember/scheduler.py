@@ -13,7 +13,9 @@ how many of their tokens are computed. Policy (similar to vLLM's v1 scheduler):
      recomputed later (prompt + tokens generated so far). Recompute costs
      FLOPs but needs no CPU swap space - on a laptop GPU, compute is the
      cheaper resource.
-  3. Remaining token budget admits WAITING sequences FCFS (max_num_seqs caps
+  3. Remaining token budget admits WAITING sequences FCFS. On admission the
+     prompt's full blocks are looked up in the prefix cache; hits become
+     already-computed tokens, so only the uncached suffix is prefilled. (max_num_seqs caps
      concurrency). With chunked prefill a long prompt is split across steps
      instead of monopolising one step, which bounds the stall it causes for
      everyone else's decode.
@@ -64,6 +66,8 @@ class Scheduler:
         self.waiting: deque[Sequence] = deque()
         self.running: list[Sequence] = []
         self.num_preemptions = 0
+        self.prefix_hit_tokens = 0  # prompt tokens served from the prefix cache
+        self.prefix_query_tokens = 0  # prompt tokens looked up
         self._static_admitting = False  # static policy: is the current batch still being formed?
 
     # ----------------------------------------------------------------- queue ops
@@ -121,14 +125,20 @@ class Scheduler:
             return out
         while self.waiting and budget > 0 and len(self.running) < self.config.max_num_seqs:
             seq = self.waiting[0]
-            n = seq.num_tokens - seq.num_computed_tokens
-            if n > budget:
-                if not self.config.chunked_prefill:
-                    break
-                n = budget
+            cached = self.bm.match_prefix(seq)  # shares cached full blocks, if any
+            seq.num_computed_tokens = cached
+            n = seq.num_tokens - cached
+            if n > budget and not self.config.chunked_prefill:
+                self._undo_prefix_match(seq)
+                break
+            n = min(n, budget)
             if not self.bm.can_allocate(seq, n):
+                self._undo_prefix_match(seq)
                 break
             self.waiting.popleft()
+            seq.num_cached_tokens = cached
+            self.prefix_hit_tokens += cached
+            self.prefix_query_tokens += seq.num_tokens
             self.bm.allocate_slots(seq, n)
             seq.status = SequenceStatus.RUNNING
             self.running.append(seq)
@@ -137,6 +147,10 @@ class Scheduler:
         if static and (len(self.running) >= self.config.max_num_seqs or not self.waiting):
             self._static_admitting = False  # batch is formed; no joins until it drains
         return out
+
+    def _undo_prefix_match(self, seq: Sequence) -> None:
+        self.bm.free(seq)
+        seq.num_computed_tokens = 0
 
     def _preempt(self, seq: Sequence) -> None:
         self.running.remove(seq)

@@ -36,6 +36,7 @@ class Sequence:
     num_computed_tokens: int = 0
     num_cached_tokens: int = 0  # prompt tokens served from the prefix cache (stats)
     block_table: list[int] = field(default_factory=list)
+    block_hashes: list[int] = field(default_factory=list)  # prefix-cache hashes of full blocks
     status: SequenceStatus = SequenceStatus.WAITING
     finish_reason: str | None = None
     num_preemptions: int = 0

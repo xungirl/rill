@@ -4,8 +4,9 @@ Pipeline for one engine step (B rows that need a token):
   1. greedy rows (temperature == 0): argmax, done.
   2. other rows, batched on the model's device:
        logits / temperature -> top-k mask -> top-p (nucleus) mask -> softmax
-  3. draw one token per row on the CPU with that request's own
-     torch.Generator. A request with `seed` gets a generator seeded once and
+  3. draw one uniform number per row from that request's own torch.Generator
+     and pick the token by inverse CDF (batched cumsum + searchsorted on the
+     device). A request with `seed` gets a generator seeded once and
      advanced only by its own draws, so its output does not depend on which
      other requests share the batch (up to floating-point differences in the
      logits themselves; see BENCHMARK.md).
@@ -83,7 +84,14 @@ def sample(
     sub = sub / temps
     if any(params[i].top_k > 0 or params[i].top_p < 1 for i in rows):
         sub = apply_top_k_top_p(sub, top_k, top_p)
-    probs = sub.softmax(dim=-1).cpu()
-    for j, i in enumerate(rows):
-        out[i] = int(torch.multinomial(probs[j], 1, generator=gens[i]).item())
+    # Inverse-CDF sampling, batched on device: token = first index whose cumulative
+    # probability reaches u. Only the scalar u comes from each row's own generator,
+    # so seeding semantics are per request. u is in (0, 1] so a zero-probability
+    # (masked) token can never be picked. (A per-row torch.multinomial on the CPU cost
+    # 54 of 77 ms per step at batch 32 - see BENCHMARK.md Stage 7.)
+    u = torch.tensor([1.0 - float(torch.rand((), generator=gens[i])) for i in rows], device=dev)
+    cdf = sub.softmax(dim=-1).cumsum(dim=-1)
+    picked = torch.searchsorted(cdf, (u * cdf[:, -1]).unsqueeze(1)).squeeze(1).clamp_(max=vocab - 1)
+    for j, tok in zip(rows, picked.tolist(), strict=True):
+        out[j] = tok
     return out

@@ -1,0 +1,326 @@
+{
+  "machine": {
+    "date": "2026-11-14T03:37:39",
+    "cpu": "Apple M2",
+    "ncpu": 8,
+    "mem_gb": 24.0,
+    "os": "macOS-15.4-arm64-arm-64bit-Mach-O",
+    "python": "3.15.2",
+    "torch": "2.15.0"
+  },
+  "fp32_cpu": {
+    "prompt_tokens": 11,
+    "per_layer_max_abs_diff": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "logits_max_abs_diff": 0.0,
+    "argmax_agree_all_positions": true
+  },
+  "bf16_cpu": {
+    "prompt_tokens": 11,
+    "per_layer_max_abs_diff": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "logits_max_abs_diff": 0.0,
+    "argmax_agree_all_positions": true
+  },
+  "greedy_fp32_cpu": {
+    "ours": "cpu/torch.float32",
+    "reference": "HF transformers cpu/torch.float32",
+    "new_tokens": 64,
+    "identical": 8,
+    "total": 8,
+    "rows": [
+      {
+        "prompt": "The capital of France is",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "def fibonacci(n):",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "Explain what a KV cache is in one sentence.",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "1, 2, 3, 5, 8, 13,",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "Once upon a time, in a small village by the sea,",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "The three laws of thermodynamics are",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "SELECT name FROM users WHERE",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "Translate to French: The weather is nice today.",
+        "identical": true,
+        "first_divergence": null
+      }
+    ]
+  },
+  "greedy_bf16_mps": {
+    "ours": "mps/torch.bfloat16",
+    "reference": "HF transformers cpu/torch.float32",
+    "new_tokens": 64,
+    "identical": 3,
+    "total": 8,
+    "rows": [
+      {
+        "prompt": "The capital of France is",
+        "identical": false,
+        "first_divergence": 5
+      },
+      {
+        "prompt": "def fibonacci(n):",
+        "identical": false,
+        "first_divergence": 57
+      },
+      {
+        "prompt": "Explain what a KV cache is in one sentence.",
+        "identical": false,
+        "first_divergence": 5
+      },
+      {
+        "prompt": "1, 2, 3, 5, 8, 13,",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "Once upon a time, in a small village by the sea,",
+        "identical": false,
+        "first_divergence": 10
+      },
+      {
+        "prompt": "The three laws of thermodynamics are",
+        "identical": false,
+        "first_divergence": 1
+      },
+      {
+        "prompt": "SELECT name FROM users WHERE",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "Translate to French: The weather is nice today.",
+        "identical": true,
+        "first_divergence": null
+      }
+    ]
+  },
+  "greedy_fp16_mps": {
+    "ours": "mps/torch.float16",
+    "reference": "HF transformers cpu/torch.float32",
+    "new_tokens": 64,
+    "identical": 8,
+    "total": 8,
+    "rows": [
+      {
+        "prompt": "The capital of France is",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "def fibonacci(n):",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "Explain what a KV cache is in one sentence.",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "1, 2, 3, 5, 8, 13,",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "Once upon a time, in a small village by the sea,",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "The three laws of thermodynamics are",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "SELECT name FROM users WHERE",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "Translate to French: The weather is nice today.",
+        "identical": true,
+        "first_divergence": null
+      }
+    ]
+  },
+  "greedy_bf16_mps_vs_hf_bf16_mps": {
+    "ours": "mps/torch.bfloat16",
+    "reference": "HF transformers mps/torch.bfloat16",
+    "new_tokens": 64,
+    "identical": 6,
+    "total": 8,
+    "rows": [
+      {
+        "prompt": "The capital of France is",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "def fibonacci(n):",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "Explain what a KV cache is in one sentence.",
+        "identical": false,
+        "first_divergence": 45
+      },
+      {
+        "prompt": "1, 2, 3, 5, 8, 13,",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "Once upon a time, in a small village by the sea,",
+        "identical": false,
+        "first_divergence": 10
+      },
+      {
+        "prompt": "The three laws of thermodynamics are",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "SELECT name FROM users WHERE",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "Translate to French: The weather is nice today.",
+        "identical": true,
+        "first_divergence": null
+      }
+    ]
+  },
+  "greedy_fp16_mps_vs_hf_fp16_mps": {
+    "ours": "mps/torch.float16",
+    "reference": "HF transformers mps/torch.float16",
+    "new_tokens": 64,
+    "identical": 8,
+    "total": 8,
+    "rows": [
+      {
+        "prompt": "The capital of France is",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "def fibonacci(n):",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "Explain what a KV cache is in one sentence.",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "1, 2, 3, 5, 8, 13,",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "Once upon a time, in a small village by the sea,",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "The three laws of thermodynamics are",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "SELECT name FROM users WHERE",
+        "identical": true,
+        "first_divergence": null
+      },
+      {
+        "prompt": "Translate to French: The weather is nice today.",
+        "identical": true,
+        "first_divergence": null
+      }
+    ]
+  }
+}

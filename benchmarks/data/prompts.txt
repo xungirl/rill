@@ -1,0 +1,64 @@
+What is the capital of Australia?
+Write a haiku about autumn leaves.
+Explain how a hash map works to a beginner.
+Give me three tips for a job interview.
+What is the difference between TCP and UDP?
+Write a Python function that reverses a linked list.
+Summarize the plot of Romeo and Juliet in two sentences.
+Translate "Where is the train station?" into Spanish, French and German.
+What causes the seasons on Earth?
+List five healthy breakfast ideas.
+Explain recursion with a simple example.
+Write a short motivational message for a student before exams.
+What is a black hole?
+How do I make a cup of pour-over coffee?
+Explain the CAP theorem in distributed systems.
+Write a limerick about a cat who loves boxes.
+What are the main differences between Python and Java?
+Describe the water cycle.
+Give a one-paragraph history of the internet.
+What is gradient descent?
+Write a SQL query to find the top 3 customers by total order amount.
+Explain what an operating system does.
+Suggest a name for a coffee shop run by robots.
+What is the Pythagorean theorem? Give an example.
+How does public-key cryptography work?
+Write a polite email declining a meeting invitation.
+What are the benefits of regular exercise?
+Explain Big-O notation and give examples of O(1), O(n) and O(n log n).
+What is photosynthesis?
+Tell me a fun fact about octopuses.
+How does a refrigerator keep food cold?
+Write a bash one-liner that counts lines in all .py files in a directory.
+What is the difference between a process and a thread?
+Explain inflation in simple terms.
+Write a two-line poem about the ocean.
+What is a REST API?
+Describe how vaccines train the immune system.
+What were the main causes of World War I?
+Give me a recipe for a simple tomato pasta.
+Explain what a transformer neural network is.
+How do I center a div in CSS?
+What is the speed of light and why is it important?
+Write a short dialogue between a teacher and a curious student about stars.
+What is the difference between weather and climate?
+Explain how garbage collection works in Java.
+What does a load balancer do?
+Write a JavaScript function that debounces another function.
+Why is the sky blue?
+Give three arguments for and against remote work.
+What is a prime number? List the first ten.
+Explain the difference between supervised and unsupervised learning.
+How do airplanes stay in the air?
+Write a product description for a reusable water bottle.
+What is the role of mitochondria in a cell?
+Explain database indexing and when it helps.
+What is the time complexity of binary search and why?
+Write a short story opening about a city where it never stops raining.
+How does GPS determine your location?
+What is a deadlock and how can it be prevented?
+Explain the rules of chess in a few sentences.
+What is the difference between RAM and disk storage?
+Write a thank-you note to a mentor.
+How do noise-cancelling headphones work?
+Explain what Kubernetes is used for.

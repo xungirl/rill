@@ -1,0 +1,56 @@
+{
+  "machine": {
+    "date": "2026-11-14T03:41:42",
+    "cpu": "Apple M2",
+    "ncpu": 8,
+    "mem_gb": 24.0,
+    "os": "macOS-15.4-arm64-arm-64bit-Mach-O",
+    "python": "3.15.2",
+    "torch": "2.15.0"
+  },
+  "device": "mps",
+  "dtype": "torch.float16",
+  "num_requests": 64,
+  "max_tokens": 256,
+  "max_model_len": 2048,
+  "block_size_used_in_run": 16,
+  "prompt_len": {
+    "mean": 21.765625,
+    "min": 17,
+    "max": 34
+  },
+  "output_len": {
+    "mean": 188.3125,
+    "min": 11,
+    "max": 256
+  },
+  "finished_by_eos": 37,
+  "steps": 256,
+  "peak_blocks_allocated_in_run": 560,
+  "step_avg_utilization": {
+    "naive_max_model_len": 0.07280090561293905,
+    "naive_request_max": 0.5371138769190332,
+    "paged_bs8": 0.9668889887662316,
+    "paged_bs16": 0.9333909934456807,
+    "paged_bs32": 0.8793995101049197
+  },
+  "final_length_utilization": {
+    "naive_max_model_len": 0.10257720947265625,
+    "naive_request_max": 0.7563143387523205,
+    "paged_bs8": 0.9851260257913247,
+    "paged_bs16": 0.9581670467502851,
+    "paged_bs32": 0.935760022271715
+  },
+  "kv_bytes_per_token": 114688,
+  "budget_gib": 2.0,
+  "budget_tokens": 18724,
+  "requests_that_fit_in_budget": {
+    "naive_max_model_len": 9,
+    "naive_request_max": 67,
+    "paged_bs8": 87,
+    "paged_bs16": 85,
+    "paged_bs32": 83
+  },
+  "load1_before": 2.509765625,
+  "load1_after": 1.92333984375
+}

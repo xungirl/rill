@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+from collections import OrderedDict
 
 import pytest
 import torch
@@ -31,7 +32,9 @@ def test_mixed_batches_match_full_forward(tiny_model: Qwen3Model, block_size: in
     cfg = tiny_model.cfg
     rng = random.Random(block_size * 7 + chunk)
     bm = BlockManager(num_blocks=200, block_size=block_size)
-    random.Random(1).shuffle(bm.free_block_ids)  # non-contiguous physical blocks
+    order = list(range(200))
+    random.Random(1).shuffle(order)
+    bm.free_block_ids = OrderedDict.fromkeys(order)  # non-contiguous physical blocks
     cache = PagedKVCache(cfg, 200, block_size, torch.float32, "cpu")
     runner = ModelRunner(tiny_model, cache)
 

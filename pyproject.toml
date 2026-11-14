@@ -63,3 +63,12 @@ ignore_missing_imports = true
 # safetensors' safe_open handle and transformers models are untyped
 module = ["ember.loader", "tests.*", "benchmarks.*"]
 disallow_untyped_calls = false
+
+# Linux (Docker, CI) gets CPU-only torch wheels; macOS keeps the PyPI wheel (with MPS).
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]

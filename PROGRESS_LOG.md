@@ -75,3 +75,15 @@
 - Problems: port 8000 occupied by an unrelated app → 8100/8101; Ollama hides Qwen3 thinking tokens as empty
   chunks → TTFT measured at first chunk for Ollama (documented); a shell `&&` chain skipped a `mv` because ruff
   failed, harmless (log was regenerated).
+
+## 2026-11-14 — Stage 7: sampling & int8
+- Sampling: temperature / top-k / top-p batched on device, per-request `torch.Generator` (seed) kept across
+  preemption; stop sequences + max_tokens from Stage 5. Tests: hypothesis check of the mask vs a brute-force
+  reference, empirical frequencies vs softmax (4σ), seeded output independent of batch neighbours and preemption,
+  reproducible over HTTP.
+- Chose weight-only int8 over speculative decoding: Qwen3-0.6B has no smaller draft model, and n-gram
+  speculation needs KV rollback in the paged cache — int8 could be finished and measured properly.
+- Measured: ppl 11.2848 (fp32) / 11.2859 (fp16) / 11.3000 (int8, +0.13%); weights −37%; batch-1 decode +20%,
+  batch-32 −1%.
+- Problem: top-p at batch 32 was 56% slower than greedy; per-row CPU multinomial was the cost → inverse-CDF on
+  device (+69% throughput for sampled decoding).

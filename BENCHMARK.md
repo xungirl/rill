@@ -231,3 +231,36 @@ load1 at the start of each point: 2.1–3.9
   attention groups fixed it (mixed 1024-chunk step 4479.9 → 687.5 ms, `results/micro_mixed_step.json`).
   Note: the Stage 3/4 tables above were measured before this fix (their workloads are decode-dominated or
   sequential, so they are mostly unaffected; Stage 8 reruns them on the final code).
+
+## Stage 7 — sampling and weight-only int8
+
+Command: `uv run python -m benchmarks.bench_quality` → `results/stage7_quality_speed.json` (load1 1.3–2.0).
+An earlier run before the sampler fix is kept as `results/stage7_quality_speed_before_sampler_fix.json`.
+
+### Accuracy: perplexity on a fixed local text
+Corpus: CPython 3.15's `pydoc_data.topics` (stdlib documentation text, topics joined in sorted order), first
+16 windows × 1,024 tokens = 16,368 scored tokens. Not a standard LM benchmark — compare rows with each other only.
+
+| config | perplexity | Δ vs fp32 | decoder+embedding weight bytes |
+|---|---|---|---|
+| fp32, CPU (reference) | 11.2848 | — | — |
+| fp16, MPS | 11.2859 | +0.01% | 1,192,099,840 (1.19 GB) |
+| int8 W8A16 (per-channel symmetric), MPS | 11.3000 | +0.13% | 752,386,048 (0.75 GB, −37%) |
+
+The embedding / tied LM head (26% of parameters) stays fp16, which is why weights shrink 37% rather than 50%.
+
+### Speed (engine decode, 128 forced tokens, 3 runs each)
+
+| config | batch 1 tok/s | batch 32 tok/s |
+|---|---|---|
+| fp16, greedy | 42.4 ± 0.1 | 538.4 ± 0.3 |
+| fp16, temperature 0.8 + top-p 0.95 | 38.8 ± 0.3 | 398.5 ± 0.6 |
+| int8, greedy | **51.0 ± 0.5 (+20%)** | 532.2 ± 1.1 (−1%) |
+
+- int8 helps where decode is weight-bandwidth bound (batch 1) and does nothing at batch 32 where the step is
+  dominated by attention / gather / launch overhead and the int8 kernel has to dequantize.
+- **Sampler fix**: in the first run top-p sampling at batch 32 ran at only 235.8 tok/s: a per-row
+  `torch.multinomial` over the 151,936-token vocabulary on the CPU cost ~54 ms of a 77 ms sampling step
+  (scratch profiling). Inverse-CDF sampling on the device (one uniform per row from the request's own generator,
+  batched `cumsum` + `searchsorted`) brought the sampler to ~22 ms and top-p throughput to 398.5 tok/s (+69%).
+  The remaining gap to greedy is mostly the full-vocabulary sort needed for top-p.

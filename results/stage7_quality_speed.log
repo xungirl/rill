@@ -1,0 +1,10 @@
+fp32 cpu {'ppl': 11.284836257754256, 'mean_nll': 2.42345990043931, 'tokens_scored': 16368}
+fp16 mps {'ppl': 11.285927875739656, 'mean_nll': 2.42355662893107, 'tokens_scored': 16368}
+int8 mps {'ppl': 11.299999245643528, 'mean_nll': 2.4248026589610827, 'tokens_scored': 16368} 1192099840 752386048
+fp16/B1/greedy 42.4 tok/s (cv 0.3%)
+fp16/B1/top_p 38.8 tok/s (cv 0.7%)
+fp16/B32/greedy 538.4 tok/s (cv 0.1%)
+fp16/B32/top_p 398.5 tok/s (cv 0.2%)
+int8/B1/greedy 51.0 tok/s (cv 0.9%)
+int8/B32/greedy 532.2 tok/s (cv 0.2%)
+wrote /Users/xunxun/ember/results/stage7_quality_speed.json

@@ -319,3 +319,50 @@ in-process ASGI transport 模拟不出「客户端关闭 TCP 连接」。`tests/
    A：见上：开环压测吞吐远低于离线 decode 吞吐 → 用 micro benchmark 复现单个混合步 → 定位到 decode 行被 pad 到 prefill 长度 → 分组 attention → 4479.9 → 687.5 ms，拐点从 λ<2 移到 2~3 req/s。前后日志都在 `results/`。
 9. **Q：Little's law 在这里怎么用？**
    A：L = λ × W：系统中平均在途请求数 = 到达率 × 平均停留时间。比如已知容量下的 e2e，可以估算需要多大的 `max_num_seqs` / `max_inflight`（见 docs/CAPACITY.md）。
+
+---
+
+## Stage 7 — 采样与 int8 量化（Sampling & weight-only int8）
+
+### 读代码顺序
+`ember/sampling.py` → `ember/engine.py`（`add_request` 里的 generator）→ `ember/quant.py` → `tests/test_sampling.py` → `tests/test_quant.py` → `benchmarks/bench_quality.py`
+
+### 1. `ember/sampling.py`
+**(a) 骨架**：`SamplingParams`（temperature / top_p / top_k / seed / max_tokens / ignore_eos + 校验）；`apply_top_k_top_p`（排序 → 按排名去掉 top-k 之外 → 在剩下的里面算 softmax、累加 → 去掉「排在它前面的概率和已经 ≥ p」的 token → scatter 回原顺序）；`sample`（greedy 行直接 argmax；其余行在设备上批量做温度/top-k/top-p，再每行从自己的 `torch.Generator` 取一个均匀随机数 u，在设备上批量 `cumsum` + `searchsorted` 做逆 CDF 采样）。
+**(b) 为什么**：
+- 顺序：温度 → top-k → top-p（和 HF 一致）。top-p 用「前面的累计概率」判断，保证概率最高的 token 永远保留。
+- **每个请求自己的随机数生成器**：带 seed 的请求输出只取决于自己的 logits 和自己的随机流，和同 batch 里有谁无关；generator 存在 `Sequence` 上，被抢占重算时**不会重置**（重算只重建 KV，不重新采样已生成的 token）。测试 `test_seeded_request_is_independent_of_batch_and_preemption` 验证这两点。
+- **逆 CDF 采样**：第一版在 CPU 上逐行 `torch.multinomial`（151,936 词表），batch 32 时采样一步 77 ms 里占 54 ms，top-p 吞吐只有 greedy 的 44%；改成每行只取一个随机数、其余在设备上批量完成后，22 ms，吞吐 235.8 → 398.5 tok/s。u 取 (0,1]，保证概率为 0（被 mask）的 token 永远选不到。
+- 排序整个 151,936 词表是有代价的，所以只对非 greedy 且设置了 top-k/top-p 的行做；吞吐代价见 BENCHMARK.md。
+- 停止串（stop sequences）在服务层基于文本实现（Stage 5），max_tokens 在引擎里。
+**(c) 语法**：`torch.searchsorted(cdf, u)` 返回第一个 ≥ u 的位置；`torch.rand((), generator=g)` 用指定生成器取一个标量；`tensor.scatter_(dim, index, src)` 把排序后的值放回原位置。
+
+### 2. `ember/quant.py`
+**(a) 骨架**：`Int8Linear`：按输出通道对称量化，`scale = max|W_row| / 127`，`Wq = round(W/scale)`；前向调用 `torch._weight_int8pack_mm(x, Wq, scale)`（kernel 内部反量化）。`quantize_int8(model)` 把 28 层里的 4 个投影全部替换。
+**(b) 为什么**：
+- **W8A16（weight-only）**：小 batch decode 受权重读取带宽限制，权重字节数减半理论上能加速；激活保持 fp16，精度损失小。
+- **per-channel 对称**：每行一个 scale，比整个矩阵一个 scale 精度高得多；对称（无 zero-point）让 kernel 简单。
+- embedding（和 LM head 共享）、norm、KV cache 不量化。
+- 测试：逐元素误差 ≤ scale/2（舍入误差上界）；tiny 模型 logits 相对误差 < 5%。
+**(c) 语法**：`torch._weight_int8pack_mm` 是 PyTorch 私有 op（下划线开头），MPS 上有实现，是 torchchat 用的那个。
+
+### Stage 7 实测（`results/stage7_quality_speed.json`）
+困惑度 fp32 11.2848 / fp16 11.2859 / int8 11.3000（+0.13%）；权重 1.19 → 0.75 GB（−37%，embedding 保持 fp16）；decode batch 1：42.4 → 51.0 tok/s（+20%），batch 32 无提升（538 vs 532）。
+
+### Stage 7 面试题
+1. **Q：temperature、top-k、top-p 分别做什么？**
+   A：temperature 缩放 logits（<1 更尖锐、>1 更平）；top-k 只保留概率最高的 k 个；top-p（nucleus）保留累计概率达到 p 的最小集合，候选集大小随分布自适应。
+2. **Q：怎么做到「固定 seed 结果可复现」？在批处理里有什么坑？**
+   A：每个请求一个独立的、用 seed 初始化的 generator，只被自己的采样推进；如果用全局 RNG，同 batch 里别的请求会消耗随机数，结果就取决于 batch 组成。剩下的坑是 logits 本身：fp16 下 batch 形状不同 → logits 有微小差异 → 可能采到不同 token（Stage 3 的 batch invariance 问题），fp32 下完全可复现。
+3. **Q：抢占重算会不会改变采样结果？**
+   A：不会。重算只重建 KV；已生成的 token 保留在 `token_ids` 里，generator 状态保留，接着往下采。测试覆盖。
+4. **Q：weight-only 量化为什么能加速 decode？什么时候不加速？**
+   A：decode 小 batch 时每步要把全部权重读一遍，是访存瓶颈，权重字节减半 → 读取时间减半。batch 大或 prefill 时变成计算瓶颈，反量化反而增加开销；在我们的 eager MPS 上 batch=1 还受 kernel launch 限制。实测见 BENCHMARK.md（如实报告，包括没有加速的情况）。
+5. **Q：怎么评估量化的精度损失？**
+   A：固定文本上的困惑度（perplexity = exp(平均负对数似然)）：fp32 参考、fp16、int8 三者对比。语料是 CPython 自带的 `pydoc_data.topics` 文档文本，本地、固定、可复现；不是标准 benchmark，只做相对比较。
+6. **Q：per-tensor、per-channel、per-group 量化的区别？**
+   A：一个 scale 管的元素越少，越能适应局部的数值范围、误差越小，但 scale 存储和计算开销越大。per-group（如每 128 个元素一组，GPTQ/AWQ 常用）在 4-bit 时几乎必需；8-bit per-channel 通常就够了。
+7. **Q：为什么不做 speculative decoding？**
+   A：Qwen3 没有更小的同词表 draft 模型可用（0.6B 已经是最小的）；n-gram/prompt-lookup 的投机解码在分页缓存上需要回滚 KV slot，时间有限下选了能完整做完、能量化评估的 int8。这是明确的取舍。
+8. **Q：top-p 实现里为什么用「之前的累计概率」而不是「包括自己的累计概率」？**
+   A：用包括自己的累计 ≤ p 会把「跨过 p 的那个 token」也去掉，可能一个都不剩；用之前的累计 < p 保留它，保证集合的总概率 ≥ p 且至少保留 1 个 token。测试用暴力参考实现做了 200 个随机例子的对比。

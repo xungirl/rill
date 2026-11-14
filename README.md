@@ -107,6 +107,21 @@ continuous batching (work in progress, see Project Journey). Runs on an Apple-si
   rows to the prefill chunk length inside SDPA; decode and prefill rows are now attended in separate groups
   (mixed-step forward 4479.9 → 687.5 ms). The pre-fix log is kept in `results/`.
 
+### 7. Sampling & int8
+- **Goal**: real sampling controls with reproducible seeds, and one optimization measured end to end.
+- **Decision & alternatives**: temperature → top-k → top-p masks batched on the device; each request has its own
+  `torch.Generator` (from `seed`), so its samples don't depend on batch neighbours and survive preemption. For
+  the optimization I chose weight-only int8 (per-channel symmetric, `torch._weight_int8pack_mm`) over
+  speculative decoding: there is no smaller Qwen3 draft model, and prompt-lookup speculation needs KV-slot
+  rollback in the paged cache — int8 could be finished and evaluated properly.
+- **Built**: `ember/sampling.py`, `ember/quant.py` (+ `--int8` server flag), `benchmarks/bench_quality.py`.
+- **Verified**: mask vs brute-force reference (hypothesis), empirical sampling frequencies vs softmax, seeded
+  determinism across batch composition and preemption, int8 rounding error bound.
+- **Measured**: int8 perplexity **11.300 vs 11.286 fp16 (+0.13%)**, weights 1.19 → 0.75 GB, batch-1 decode
+  **42.4 → 51.0 tok/s (+20%)**, no gain at batch 32 (532 vs 538).
+- **Problems / fixes**: top-p at batch 32 was 56% slower than greedy because of a per-row CPU `multinomial` over
+  the 152k vocabulary; inverse-CDF sampling on the device made sampled decoding 69% faster (235.8 → 398.5 tok/s).
+
 ### Key metrics
 
 | metric | value | how measured | source |
@@ -126,9 +141,11 @@ continuous batching (work in progress, see Project Journey). Runs on an Apple-si
 | ember saturation knee (open-loop, ~215-in/110-out tokens) | λ 2→3 req/s: TTFT p99 0.47 s → 15.5 s | same | `results/stage6_serving_ember.json` |
 | ember vs Ollama Q4_K_M peak / single-user TPOT | 201.4 vs 217.3 tok/s / 26 vs 9 ms | same | `results/stage6_serving_ollama.json` |
 | mixed prefill+decode step fix (1024 chunk + 31 decodes) | 4479.9 → 687.5 ms | `benchmarks/micro_mixed_step.py` | `results/micro_mixed_step.json` |
+| int8 W8A16: perplexity / weights / batch-1 decode | +0.13% / −37% / +20% (51.0 vs 42.4 tok/s) | `benchmarks/bench_quality.py` | `results/stage7_quality_speed.json` |
+| sampled (top-p) decode at B=32, before → after sampler fix | 235.8 → 398.5 tok/s | same | `results/stage7_quality_speed{_before_sampler_fix,}.json` |
 
 ### Next steps
-Sampling & int8 (7) → ops polish (8).
+Ops polish (8).
 
 ## How to run
 

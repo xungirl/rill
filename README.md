@@ -20,6 +20,24 @@ continuous batching (work in progress, see Project Journey). Runs on an Apple-si
   bf16 MPS run disagrees with ours on 2/8): bf16's 8-bit mantissa flips near-tie argmaxes. fp16 matched 8/8 → fp16
   is the MPS default.
 
+### 2. Paged KV cache
+- **Goal**: stop reserving `max_len` KV slots per request; hold only what has been written.
+- **Decision & alternatives**: vLLM-style paging — a pool of fixed-size blocks (16 tokens), a free list, a block
+  table per sequence and per-block ref counts. A single `allocate_slots(seq, n)` covers whole-prompt prefill,
+  prefill chunks and decode. The pool is a flat `[num_blocks*block_size, kv_heads, head_dim]` tensor per layer, so
+  writing is one `index_copy_` by slot id. Reading uses plain PyTorch gather into a padded batch + one batched SDPA
+  call per layer; a fused paged-attention kernel (vLLM/FlashInfer) does not exist for MPS, and writing a Metal
+  kernel was out of scope. Alternative considered: a per-sequence Python loop over SDPA (no padding) — rejected
+  because kernel launches scale with batch size, which is exactly what hurts on MPS.
+- **Built**: `ember/block_manager.py`, `ember/paged_attention.py`, `ember/model_runner.py`, `ember/sequence.py`.
+- **Verified**: hypothesis state-machine test of block-manager invariants; paged attention over mixed
+  prefill-chunk/decode batches equals the full causal forward (block sizes 1, 3, 4, 16); real-model batched paged
+  greedy == contiguous greedy.
+- **Measured** (64 real generations): KV slot utilization 93.3% (paged, bs=16) vs 53.7% (reserve prompt+max_tokens)
+  vs 7.3% (reserve max_model_len) averaged over decode steps; in a 2 GiB budget that is 85 vs 67 vs 9 requests.
+- **Problems / fixes**: the first memory benchmark OOM'd because I sized the pool with the naive formula
+  (64 × 2048 slots = 14 GiB) — a nice demonstration of the problem itself; resized to Σ(prompt+max_tokens).
+
 ### Key metrics
 
 | metric | value | how measured | source |
@@ -28,9 +46,11 @@ continuous batching (work in progress, see Project Journey). Runs on an Apple-si
 | greedy token parity vs HF, fp16 MPS | 8/8 prompts × 64 tokens | same | `results/stage1_parity.json` |
 | single-request decode, MPS fp16 | 45.9 ± 0.8 tok/s (n=3) | `benchmarks/bench_single.py` | `results/stage1_single_request.json` |
 | single-request decode, CPU fp32 | 18.6 ± 0.0 tok/s (n=3) | same | `results/stage1_single_request.json` |
+| KV slot utilization, paged bs=16 vs reserve prompt+max_tokens | 93.3% vs 53.7% (step avg, 64 real requests) | `benchmarks/bench_memory.py` | `results/stage2_memory.json` |
+| requests fitting in 2 GiB KV: paged vs naive max_model_len=2048 | 85 vs 9 | same | `results/stage2_memory.json` |
 
 ### Next steps
-Paged KV cache (Stage 2) → continuous batching (3) → prefix caching (4) → OpenAI-compatible server (5) →
+Continuous batching (3) → prefix caching (4) → OpenAI-compatible server (5) →
 load testing (6) → sampling & int8 (7) → ops polish (8).
 
 ## How to run
@@ -46,3 +66,5 @@ The real-model tests/benchmarks expect `Qwen/Qwen3-0.6B` in the local Hugging Fa
 ## Limitations
 - Only the Qwen3 dense architecture (no MoE, no rope scaling / sliding window).
 - Pure PyTorch eager; no custom kernels, no CUDA graphs. Batch-1 decode is launch-overhead bound.
+- Paged attention gathers each sequence's K/V into a padded tensor every layer (no fused paged-attention kernel
+  on MPS): extra memory traffic proportional to batch × longest context.

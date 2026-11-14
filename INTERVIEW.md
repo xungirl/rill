@@ -73,3 +73,58 @@
    A：batch=1 时每步只有约 1.2 GB 权重读取，M2 的带宽理论上能到上百 token/s，但我们实测约 40 tok/s——瓶颈是 PyTorch eager 模式在 MPS 上的 kernel launch 和 Python 开销（每层十几个小 kernel × 28 层）。这正是批处理（Stage 3）能大幅提升吞吐的原因：一次 launch 服务多个序列。
 8. **Q：为什么要融合 QKV / gate-up？有什么代价？**
    A：3 个矩阵乘变 1 个，kernel 数减少、矩阵更大更好利用硬件；代价是加载时要拼接权重（名字映射稍复杂），以及在低精度下累加顺序改变导致和参考不再逐位一致（见第 6 题）。
+
+---
+
+## Stage 2 — 分页 KV 缓存（Paged KV cache）
+
+### 读代码顺序
+`ember/sequence.py` → `ember/block_manager.py` → `ember/paged_attention.py` → `ember/model_runner.py` → `tests/test_block_manager.py` → `tests/test_paged_attention.py` → `benchmarks/bench_memory.py`
+
+### 1. `ember/sequence.py`
+**(a) 骨架**：`Sequence` 数据类：`token_ids`（prompt + 已生成）、`num_computed_tokens`（已经写进 KV 缓存的 token 数）、`block_table`、状态（WAITING / RUNNING / FINISHED）。
+**(b) 为什么**：整个调度器只看一个差值 `num_tokens - num_computed_tokens`：>1 是 prefill（可能分块），=1 是 decode。分块 prefill（chunked prefill）、前缀缓存命中（prefix cache hit，直接把 computed 往前推）、抢占重算（preemption by recompute，把 computed 归零）全都是改这一个计数器——同一条代码路径。
+**(c) 语法**：`field(default_factory=list)` 避免可变默认值共享；`field(init=False)` + `__post_init__` 在构造后派生字段；`eq=False` 让对象按身份比较（`seq in list` 不会逐字段比）。
+
+### 2. `ember/block_manager.py`
+**(a) 骨架**：`Block(block_id, ref_count)` 列表 + `free_block_ids` 双端队列（deque，空闲链表）。核心方法：`num_new_blocks_needed` / `can_allocate` / `allocate_slots` / `free` / `fork`。逻辑位置 t 的物理槽位（slot）= `block_table[t // bs] * bs + t % bs`。
+**(b) 为什么**：
+- 和操作系统虚拟内存一样：逻辑连续、物理不连续。按需分配，一个序列最多浪费 `block_size-1` 个槽（内部碎片，internal fragmentation），任何空闲块都能接到任何序列后面，所以没有外部碎片（external fragmentation）。
+- `allocate_slots` 失败时**没有副作用**（先检查再分配），调度器可以放心先问后做。
+- `free` 逆序释放：序列尾部最不可能被共享，先回到空闲队列被复用（Stage 4 前缀缓存时有用）。
+- 引用计数（ref count）支持共享块：`fork` 让子序列共享父序列的块；只共享**满的**块，所以不需要写时复制（copy-on-write）。
+**(c) 语法**：`-(-n // k)` 是整数向上取整；`deque.popleft()` O(1)。
+
+### 3. `ember/paged_attention.py`（核心）
+**(a) 骨架**：`PagedKVCache`（每层一个扁平的 `[num_blocks*bs, kv_heads, d]` K 池和 V 池）；`PagedAttentionMetadata.build`（每步构建一次、所有层共享：`slot_mapping`、`gather_slots`、`query_index`、`mask`）；`PagedAttention.forward` 三步：① `index_copy_` 按 slot 写入新 K/V ② 按 `gather_slots` 把每个序列的上下文收集成 `[B, kv_heads, S, d]` ③ 把打平的 query 散到 `[B, H, max_q, d]`，一次批量 SDPA，再按 `query_index` 收回来。
+**(b) 为什么**：
+- mask 同时编码两件事：key 存在（`j < context_len`）和因果（`j <= query 的绝对位置`）。query i 的绝对位置是 `context_len - query_len + i`——这个公式让同一套代码处理 prefill、分块 prefill、decode。
+- padding 的 query 行永远至少能看到 key 0，所以不会出现全 mask → softmax NaN（我一开始写了保护代码，推导后发现是死代码，删了，测试里留了断言）。
+- 代价（诚实说）：没有融合的 paged attention kernel（vLLM 用 CUDA kernel 直接按块表读），我们每层都把 K/V 真的复制出来，访存 ∝ batch × 最长上下文。
+**(c) 语法**：`tensor[index_tensor]` 是高级索引（gather，会复制）；`index_copy_(0, idx, src)` 原地按行写；`@classmethod build` 是工厂方法。
+
+### 4. `ember/model_runner.py`
+**(a) 骨架**：`ScheduledSeq(seq, num_new_tokens)` + `ModelRunner.execute(batch)`：拼 `input_ids`/`positions` → 建 metadata → 前向 → 只对 `completes_sequence` 的序列取最后一个 token 算 logits。
+**(b) 为什么**：分块 prefill 的中间块不需要采样，就不做 `[H,V]` 投影（省最大的那个 matmul）。
+**(c) 语法**：`torch.inference_mode()` 装饰器。
+
+### Stage 2 实测（`results/stage2_memory.json`）
+64 条真实生成（prompt 17–34 token，输出 11–256，37 条遇 EOS 停）：逐步平均利用率 paged(bs=16) **93.3%**，预留 prompt+max_tokens **53.7%**，预留 max_model_len=2048 **7.3%**；2 GiB KV 能放 85 / 67 / 9 个这样的请求。
+
+### Stage 2 面试题
+1. **Q：为什么需要分页？naive 预分配浪费在哪？**
+   A：naive 必须在请求开始时按最大可能长度预留连续显存，但输出长度事先未知，多数请求早停（我们 64 条里 37 条遇 EOS）。实测预留 prompt+max_tokens 平均只有 53.7% 的槽被用到；分页按需分配，93.3%。
+2. **Q：分页的碎片有多少？block size 怎么选？**
+   A：每个序列只有最后一个块可能不满，浪费 < block_size。实测 bs=8/16/32 利用率 96.7%/93.3%/87.9%。块越小浪费越少，但块表更长、gather 索引更多、kernel 效率下降；取 16（vLLM 默认）。
+3. **Q：逻辑 token 位置怎么映射到物理位置？**
+   A：`slot = block_table[pos // bs] * bs + pos % bs`，见 `BlockManager.slot` 和 `PagedAttentionMetadata.build`。
+4. **Q：你的 paged attention 和 vLLM 的有什么不同？**
+   A：数据布局相同（块表 + slot mapping），但 vLLM 用 CUDA kernel 在注意力内部按块表直接读 K/V；我在 PyTorch 里先 gather 成 padded 张量再调 SDPA，多了一次复制和 padding。原因：MPS 上没有现成的 paged kernel。这是已知的性能差距。
+5. **Q：怎么测试 block manager 的正确性？**
+   A：hypothesis 状态机测试：随机交错 add / decode / fork / free，每步检查不变量——ref_count 等于出现在多少个块表里；空闲链表恰好是 ref_count==0 的块且无重复；每个序列的块数正好是 ⌈computed/bs⌉。`derandomize=True` 保证可复现。
+6. **Q：prefill 和 decode 混在一个 batch 里，mask 怎么构造？**
+   A：每个序列 b 有 `query_len` 和 `context_len`，query i 的绝对位置 = `context_len - query_len + i`，`mask[b,i,j] = (j <= 该位置) & (j < context_len)`。decode 时 query_len=1，就是看全部历史。
+7. **Q：共享块为什么不需要 copy-on-write？**
+   A：我们只共享**已经写满**的块（前缀缓存按满块哈希），满块之后不会再被写；新 token 总是写进序列自己的新块。只有共享未满的块（比如 beam search 从中间分叉）才需要 CoW。
+8. **Q：KV 池大小怎么定？**
+   A：`num_blocks = 预算字节 / (kv_bytes_per_token × block_size)`（`PagedKVCache.num_blocks_for_budget`）。2 GiB fp16 → 18,724 token → 1,170 块。我第一次压测按 64×2048 预留直接 OOM（14 GiB），正好说明了 naive 的问题。

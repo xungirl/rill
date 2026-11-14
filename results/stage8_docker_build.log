@@ -1,0 +1,145 @@
+DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
+            Install the buildx component to build images with BuildKit:
+            https://docs.docker.com/go/buildx/
+
+Sending build context to Docker daemon  354.8kB
+Step 1/14 : FROM python:3.15-slim
+3.15-slim: Pulling from library/python
+405d5f23d33f: Pulling fs layer
+ef8201317da3: Pulling fs layer
+acd43e9bebc3: Pulling fs layer
+aa7731a0a627: Pulling fs layer
+e59eda115bd8: Download complete
+635b4ecfac70: Download complete
+405d5f23d33f: Download complete
+ef8201317da3: Download complete
+aa7731a0a627: Download complete
+acd43e9bebc3: Download complete
+acd43e9bebc3: Pull complete
+ef8201317da3: Pull complete
+aa7731a0a627: Pull complete
+405d5f23d33f: Pull complete
+Digest: sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
+Status: Downloaded newer image for python:3.15-slim
+ ---> 65a65fc7b30b
+Step 2/14 : COPY --from=ghcr.io/astral-sh/uv:0.12.15 /uv /usr/local/bin/uv
+0.12.15: Pulling from astral-sh/uv
+7aae56c48522: Pulling fs layer
+ff0b54abc503: Pulling fs layer
+379ad1deca9c: Download complete
+ff0b54abc503: Download complete
+da4fc8cdb18b: Download complete
+7aae56c48522: Download complete
+ff0b54abc503: Pull complete
+7aae56c48522: Pull complete
+Digest: sha256:62f8c047d0a0e9ece6b53fc63df902585a67a47a7f318ddec4a37db586edc8e3
+Status: Downloaded newer image for ghcr.io/astral-sh/uv:0.12.15
+ ---> 794a0bf3858e
+Step 3/14 : ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv PATH="/opt/venv/bin:$PATH"
+ ---> Running in 151b408c5d92
+ ---> Removed intermediate container 151b408c5d92
+ ---> c9ac4ea0e345
+Step 4/14 : WORKDIR /app
+ ---> Running in 794de517e0dc
+ ---> Removed intermediate container 794de517e0dc
+ ---> 5658862a6c7b
+Step 5/14 : COPY pyproject.toml uv.lock ./
+ ---> c6143993f635
+Step 6/14 : RUN uv sync --frozen --no-dev --no-install-project
+ ---> Running in 4b68e209b292
+[91mUsing CPython 3.15.2 interpreter at: /usr/local/bin/python3
+Creating virtual environment at: /opt/venv
+[0m[91mDownloading tokenizers (3.4MiB)
+[0m[91mDownloading networkx (2.0MiB)
+[0m[91mDownloading hf-xet (3.9MiB)
+[0m[91mDownloading sympy (6.0MiB)
+[0m[91mDownloading pydantic-core (2.0MiB)
+[0m[91mDownloading numpy (15.0MiB)
+[0m[91mDownloading torch (162.9MiB)
+[0m[91m   Building pyyaml==6.0.3
+[0m[91m Downloaded torch
+[0m[91m Downloaded pydantic-core
+[0m[91m Downloaded networkx
+[0m[91m Downloaded tokenizers
+[0m[91m [0m[91mDownloaded[0m[91m hf-xet
+[0m[91m [0m[91mDownloaded sympy
+[0m[91m Downloaded numpy
+[0m[91m      Built pyyaml==6.0.3
+[0m[91mPrepared 35 packages in 8.28s
+[0m[91mInstalled 35 packages in 2.17s
+[0m[91mBytecode compiled 6250 files in 3.33s
+ + annotated-doc==0.0.6
+ + annotated-types==0.8.0
+ + anyio==4.16.0
+ + click==8.5.1
+ + fastapi==0.162.7[0m[91m
+ + filelock==4.2.10
+ + fsspec==2026.9.0
+ + h11==0.16.0
+ + hf-xet==1.8[0m[91m.0
+ +[0m[91m httpcore2[0m[91m==2.16.0
+ + httpx2[0m[91m==2.16.0
+ + huggingface-hub==2.4.0
+ [0m[91m+ idna[0m[91m==3.20
+[0m[91m + [0m[91mjinja2==3[0m[91m.1.6
+[0m[91m + [0m[91mmarkupsafe==3.[0m[91m0.4
+[0m[91m + [0m[91mmpmath==1[0m[91m.3.0[0m[91m
+ +[0m[91m networkx[0m[91m==3.[0m[91m7
+ +[0m[91m numpy[0m[91m==2.5.4
+ + opentelemetry-api==1.45.2
+ + packaging[0m[91m==26.3[0m[91m
+ [0m[91m+ prometheus-client==0.26.0
+ + pydantic==2.14.3
+ + pydantic-core==2.50.4
+ + pyyaml==6.0.3
+ [0m[91m+ safetensors==0.8.0
+ + setuptools==84.2.1
+ + starlette==1.[0m[91m10.0
+ [0m[91m+ sympy[0m[91m==1.14[0m[91m.0[0m[91m
+ + [0m[91mtokenizers==[0m[91m0.23.3[0m[91m
+ +[0m[91m torch[0m[91m==2.15[0m[91m.0+cpu[0m[91m
+ +[0m[91m tqdm[0m[91m==4.70[0m[91m.1
+ [0m[91m+ truststore[0m[91m==0.10.[0m[91m5
+ [0m[91m+ typing-extensions[0m[91m==4.16.0[0m[91m
+ +[0m[91m typing-inspection==0.4.5
+ + uvicorn==0.54[0m[91m.0
+[0m ---> Removed intermediate container 4b68e209b292
+ ---> aaa39f3d3bb8
+Step 7/14 : COPY ember ./ember
+ ---> b78159ea6a83
+Step 8/14 : COPY README.md ./
+ ---> 7f61d0bf0b08
+Step 9/14 : RUN uv sync --frozen --no-dev
+ ---> Running in 3d01b50e2460
+[91m   Building ember @ file:///app
+[0m[91m      Built ember @ file:///app
+[0m[91mPrepared 1 package in 506ms
+[0m[91mInstalled 1 package in 3ms
+[0m[91mBytecode compiled 6250 files in 142ms
+ + ember==0.1.0 (from file:///app)
+[0m ---> Removed intermediate container 3d01b50e2460
+ ---> 623f36bc2582
+Step 10/14 : RUN useradd --create-home ember
+ ---> Running in a19e1f4cc627
+ ---> Removed intermediate container a19e1f4cc627
+ ---> 97075a18a5a3
+Step 11/14 : USER ember
+ ---> Running in efbf7c50a52c
+ ---> Removed intermediate container efbf7c50a52c
+ ---> a0db8953d078
+Step 12/14 : EXPOSE 8100
+ ---> Running in 2fd979c29931
+ ---> Removed intermediate container 2fd979c29931
+ ---> 48de6f38a0e8
+Step 13/14 : HEALTHCHECK --interval=30s --timeout=5s --start-period=120s CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health')"
+ ---> Running in e939c184e444
+ ---> Removed intermediate container e939c184e444
+ ---> 5f6c26604d15
+Step 14/14 : ENTRYPOINT ["python", "-m", "ember.server", "--device", "cpu", "--host", "0.0.0.0", "--port", "8100"]
+ ---> Running in a064ac428bf7
+ ---> Removed intermediate container a064ac428bf7
+ ---> 49a2a1ebc6f7
+Successfully built 49a2a1ebc6f7
+Successfully tagged ember:cpu
+docker build -t ember:cpu .  0.02s user 0.02s system 0% cpu 1:44.38 total
+exit 0

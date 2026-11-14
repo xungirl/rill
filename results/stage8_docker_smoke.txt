@@ -1,0 +1,7 @@
+# docker run --rm -p 8102:8100 -v ~/.cache/huggingface:/models:ro ember:cpu   (Sat Nov 14 06:03:31 PST 2026)
+python 3.15.2 torch 2.15.0+cpu
+$ curl localhost:8102/health
+{"status":"ok","inflight":0}
+$ curl localhost:8102/v1/chat/completions (CPU fp32 inside the container)
+{"id":"chatcmpl-ea0032997a6d455a93aec3f2","created":1794665225,"model":"Qwen/Qwen3-0.6B","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"The capital of France is Paris."},"finish_reason":"stop"}],"usage":{"prompt_tokens":24,"completion_tokens":8,"total_tokens":32}}
+{"event": "request_done", "request_id": "chatcmpl-ea0032997a6d455a93aec3f2", "status": "ok", "finish_reason": "stop", "prompt_tokens": 24, "completion_tokens": 8, "ttft_s": 0.9114, "e2e_s": 3.6971}

@@ -57,6 +57,24 @@ continuous batching (work in progress, see Project Journey). Runs on an Apple-si
   (micro-benchmark) → +66% throughput at B=32. Also: fp16 batching is not bit-batch-invariant (38–43/48 outputs
   match the sequential run); fp32 is exact — documented rather than hidden.
 
+### 4. Prefix caching
+- **Goal**: requests sharing a prefix (system prompt, few-shot examples, chat history) should not recompute it.
+- **Decision & alternatives**: vLLM-v1-style block hashing: each *full, already-computed* block is registered
+  under `hash(prev_block_hash, block_tokens)`, so a hit implies the whole prefix matches. New requests attach the
+  longest cached run of blocks (ref_count += 1) and prefill only the rest. Freed cached blocks stay in the free
+  list (an `OrderedDict` used as an LRU queue) until the space is needed — caching never reduces capacity. Only
+  full blocks are shared and they are never written again, so no copy-on-write is required. Alternative: a radix
+  tree over tokens (SGLang) — finer-grained matching but more complex eviction; not needed for this workload.
+- **Built**: prefix-cache half of `ember/block_manager.py`, admission in `ember/scheduler.py`, registration in
+  `ember/engine.py`.
+- **Verified**: unit + state-machine tests (ref counts, LRU order, collision safety, hash ↔ block bijection);
+  engine outputs identical with cache on/off on the fp32 tiny model, including forced evictions.
+- **Measured** (587-token shared system prompt, 32 requests): TTFT of cache hits **361.5 → 39.5 ms (9.2×)**;
+  batched throughput **48.6 → 151.0 tok/s (3.1×)**; 93% of prompt tokens served from cache.
+- **Problems / fixes**: a test exposed that plain "least recently freed" eviction threw away cached blocks while
+  empty blocks were free → empty blocks are now handed out first. In fp16, 29–31/32 greedy outputs match cache-off
+  (different matmul shapes on a hit); exact in fp32.
+
 ### Key metrics
 
 | metric | value | how measured | source |
@@ -70,9 +88,11 @@ continuous batching (work in progress, see Project Journey). Runs on an Apple-si
 | offline throughput, continuous vs static vs sequential (B=32, 48 req) | 377.3 vs 308.2 vs 41.4 tok/s (n=3, cv ≤ 0.9%) | `benchmarks/bench_batching.py` | `results/stage3_batching.json` |
 | decode throughput at batch 32 / 64 | 517.8 / 670.4 tok/s | `benchmarks/bench_decode_batch.py` | `results/stage3_decode_batch.json` |
 | K/V gather fix (56 gathers, B=32) | 81.0 → 12.7 ms | `benchmarks/micro_gather.py` | `results/micro_gather.json` |
+| prefix cache: TTFT of hits, 614-token prompts | 361.5 → 39.5 ms (n=3, cv ≤ 0.5%) | `benchmarks/bench_prefix.py` | `results/stage4_prefix_cache.json` |
+| prefix cache: batched throughput (B=16) | 48.6 → 151.0 tok/s | same | `results/stage4_prefix_cache.json` |
 
 ### Next steps
-Prefix caching (4) → OpenAI-compatible server (5) →
+OpenAI-compatible server (5) →
 load testing (6) → sampling & int8 (7) → ops polish (8).
 
 ## How to run
@@ -85,6 +105,7 @@ uv run python -m benchmarks.bench_single
 uv run python -m benchmarks.bench_memory
 uv run python -m benchmarks.bench_decode_batch
 uv run python -m benchmarks.bench_batching
+uv run python -m benchmarks.bench_prefix
 ```
 The real-model tests/benchmarks expect `Qwen/Qwen3-0.6B` in the local Hugging Face cache; nothing is downloaded.
 

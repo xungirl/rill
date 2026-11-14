@@ -36,3 +36,16 @@
 - Measured: continuous B=32 377.3 tok/s vs static 308.2 vs sequential 41.4 (48 requests, 3 repeats, cv ≤ 0.9%).
 - Caveat recorded: fp16 MPS outputs differ from the sequential run for 5–10 of 48 requests (batch-shape rounding).
 - Note: a few seconds of CPU-only unit tests overlapped the static-8 run (variance stayed < 1%).
+
+## 2026-11-14 — Stage 4: prefix caching
+- Chained block hashes (`hash(prev_hash, tokens)`), `cached: hash → block`, token-id check against collisions,
+  `match_prefix` on admission (never the final token), `cache_full_blocks` after each step (only written K/V is
+  shareable), `OrderedDict` free list doubling as LRU eviction queue.
+- Design fix found by a failing test: pure free-time LRU evicted cached blocks while empty blocks were available;
+  freed blocks without cached content now go to the front of the free list.
+- Tests: unit tests (hits, last-token rule, chain dependency, revival from free list, LRU order, collision),
+  hypothesis state machine with caching, engine cache on/off equality incl. evictions.
+- Measured: TTFT for cache hits 361.5 → 39.5 ms; batched throughput 48.6 → 151.0 tok/s on a 587-token shared
+  system prompt workload. fp16 output agreement on/off 29–31/32.
+- Problem: first benchmark run crashed at the end (cv of an all-zero hit-rate series divided by zero) and lost
+  its results; fixed `summarize` and reran.

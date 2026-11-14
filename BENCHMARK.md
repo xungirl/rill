@@ -111,3 +111,29 @@ token budget 2,048/step; MPS fp16. TTFT and e2e are measured from t=0, so they i
   run (identical across repeats of the same mode). Changing batch composition changes the fp16 matmul/SDPA shapes
   and hence rounding, which flips near-tie argmaxes. In fp32 on CPU, continuous batching with chunked prefill and
   preemption reproduces single-sequence greedy exactly (`tests/test_scheduler.py::test_real_model_continuous_batching_matches_reference_fp32`).
+
+## Stage 4 — prefix caching
+
+Command: `uv run python -m benchmarks.bench_prefix` → `results/stage4_prefix_cache.json` (3 repeats per cell,
+fresh engine per run, load1 at start 1.3–2.2). Workload: a 587-token system prompt
+(`benchmarks/data/system_prompt.txt`) + 32 different user questions → 613.9 prompt tokens on average; 32 forced
+output tokens per request; MPS fp16; block size 16.
+
+| scenario | metric | cache off | cache on | change |
+|---|---|---|---|---|
+| one request at a time | TTFT, requests 2–32 (mean) | 361.5 ms | **39.5 ms** | 9.2× lower |
+| one request at a time | TTFT, all 32 (mean) | 362.2 ms | 50.2 ms | 7.2× lower |
+| one request at a time | first request TTFT (cold, always a miss) | 383.1 ms | 383.4 ms | — |
+| one request at a time | prompt tokens actually prefilled | 19,646 | 1,294 | hit rate 93% |
+| 32 at t=0, continuous B=16 | output tok/s | 48.6 | **151.0** | 3.1× |
+| 32 at t=0, continuous B=16 | TTFT mean (incl. queueing) | 9.57 s | 3.23 s | 3.0× lower |
+| 32 at t=0, continuous B=16 | prompt tokens prefilled / hit rate | 19,646 / 0% | 3,070 / 84% | — |
+
+All cells have cv ≤ 0.5%. Hit rate is lower in the batched case because the first 16 requests are admitted in the
+same steps, before any block of the shared prefix has been written (blocks become shareable only after their K/V
+exist), so several of them compute the prefix themselves.
+
+Correctness: greedy outputs cache-on vs cache-off are identical for 29/32 (one-at-a-time) and 31/32 (batched)
+requests on MPS fp16 — a hit computes only the suffix, i.e. different matmul shapes and fp16 rounding. On the tiny
+fp32 model the outputs are identical in all cases, including a 40-block pool that forces LRU evictions
+(`tests/test_prefix_cache.py::test_engine_outputs_identical_with_cache_on_and_off`).

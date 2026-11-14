@@ -177,3 +177,47 @@ fp16 下 38–43/48 个输出和顺序执行逐 token 相同（batch 形状改�
    A：decode 时每步都要读一遍全部权重（~1.2 GB），batch=1 时这次读取只服务 1 个 token；batch=B 时服务 B 个，权重读取和 kernel launch 开销被摊薄。实测见 BENCHMARK.md 的 decode 吞吐 vs batch。批再大以后，注意力的 K/V 读取（随 batch × 上下文增长）和 logits 投影成为主要开销。
 8. **Q：你怎么发现并解决性能瓶颈的？**
    A：先算理论值（计算量/访存量），发现实测离谱 → 逐个算子计时（`torch.mps.synchronize()` 保证计时准确）→ 定位到 gather 占 2/3 → 写微基准比较 4 种 gather 实现（结果逐位相同）→ 换成 block 级 `index_select`。有前后对比数据（`results/stage3_decode_batch_before_gather_fix.json` vs `results/stage3_decode_batch.json`）。
+
+---
+
+## Stage 4 — 前缀缓存（Prefix caching）
+
+### 读代码顺序
+`ember/block_manager.py`（后半部分：`match_prefix` / `cache_full_blocks` / `_take_free_block` / `_release`）→ `ember/scheduler.py`（admission 段）→ `ember/engine.py`（`step` 里的 `cache_full_blocks`）→ `tests/test_prefix_cache.py` → `benchmarks/bench_prefix.py`
+
+### 1. `ember/block_manager.py`（前缀缓存部分）
+**(a) 骨架**：每个 `Block` 多了 `block_hash` 和 `token_ids`；`cached: dict[hash → block_id]`；空闲链表从 deque 换成 `OrderedDict`（可以 O(1) 删除中间元素）。`match_prefix(seq)`：新请求到达时，逐个满块算链式哈希去查；`cache_full_blocks(seq)`：每步之后，把新写满的块登记进缓存；`_take_free_block`：从空闲链表头取块，如果它带着缓存内容就驱逐（evict）。
+**(b) 为什么**：
+- **链式哈希** `h_i = hash((h_{i-1}, 本块 tokens))`：一个 token 的 K/V 取决于它前面所有 token，所以两个块「内容相同」必须连前缀也相同。链式哈希把整个前缀编码进去。
+- **存 token_ids 做二次校验**：哈希碰撞时也不会读到错误的 K/V（测试 `test_hash_collision_is_rejected_by_token_check`）。
+- **只在 K/V 真正写入之后登记**（step 之后调 `cache_full_blocks`）：否则同一步里另一个序列可能命中一个还没写的块。
+- **至少留 1 个 token 不命中**：prompt 完全命中时也得算最后一个 token 的 logits 才能采样（`test_never_matches_the_final_token`）。
+- **空闲链表 = LRU 驱逐队列**：ref_count 归零的块带着哈希回到链表尾部（最近使用），分配从头部取（最久未用）；命中一个空闲的缓存块就把它从链表里「捞回来」。没有缓存内容的空块放到**头部**优先复用——这是写测试时发现的：纯按释放时间排序会先驱逐有价值的缓存块。
+- **ref count 共享 + 不需要 CoW**：只共享满块，满块不会再被写。
+- 和抢占的协同：被抢占的序列释放块后，块还在缓存里，重算时大概率命中，抢占代价变小。
+**(c) 语法**：`OrderedDict.popitem(last=False)` 弹出最早插入的；`move_to_end(k, last=False)` 移到头部；`hash((a, tuple))` 对 int 元组是确定性的（不受 PYTHONHASHSEED 影响，字符串才会随机化）。
+
+### 2. scheduler 的接纳（admission）段
+**(a) 骨架**：`match_prefix` → `num_computed_tokens = 命中数` → 只给剩余部分分配块 → 失败就 `_undo_prefix_match` 回滚。
+**(b) 为什么**：命中的块可能本来在空闲链表里（ref=0），拿走它们会减少空闲块数，所以必须「先占住命中块，再检查剩余能否分配」，不行就回滚，保证没有副作用。
+
+### Stage 4 实测（`results/stage4_prefix_cache.json`）
+587-token 共享 system prompt + 32 个不同问题：命中请求的 TTFT **361.5 → 39.5 ms（9.2 倍）**，93% 的 prompt token 来自缓存；16 并发批处理吞吐 **48.6 → 151.0 tok/s（3.1 倍）**。批处理时命中率只有 84%：前 16 个请求在同一步被接纳，那时前缀块还没写完、不能共享。fp16 下缓存开/关 greedy 一致 29–31/32。
+
+### Stage 4 面试题
+1. **Q：prefix caching 解决什么问题？适用什么场景？**
+   A：多个请求共享相同前缀（system prompt、few-shot 示例、多轮对话历史）时，前缀的 K/V 只算一次。直接减少 prefill 计算 → TTFT 下降、吞吐上升。
+2. **Q：为什么用哈希而不是前缀树（radix tree，SGLang 的做法）？**
+   A：块级哈希实现简单、查找 O(块数)、和分页天然对齐（vLLM 的做法）；radix tree 能做 token 级匹配、更适合多轮对话树状分叉，但实现和驱逐更复杂。代价：我们只能按整块命中，最后不满的块永远要重算。
+3. **Q：驱逐策略？为什么 LRU？**
+   A：LRU 近似「最近被用过的前缀更可能再被用」（热门 system prompt）。实现上复用空闲链表，不需要额外数据结构。空块优先复用。
+4. **Q：怎么保证缓存开/关输出一致？**
+   A：tiny 模型 fp32 上，缓存开/关输出逐 token 相同（包括小 KV 池、发生驱逐的情况，`test_engine_outputs_identical_with_cache_on_and_off`）。真模型 MPS fp16 上，命中时 prefill 只算后缀，矩阵形状不同导致浮点累加顺序不同，greedy 可能在接近平局处分叉——实测一致率见 BENCHMARK.md，诚实报告。
+5. **Q：什么时候命中率高但收益小？**
+   A：输出很长、prefill 占比小时，省下的 prefill 在总时间里占比低；或者 prefill 本来就很快（短 prompt）。我们的基准是 587-token system prompt + 32 token 输出，prefill 占比大，所以收益明显。
+6. **Q：哈希碰撞怎么办？**
+   A：块里存了 token_ids，命中时逐个比较；碰撞就当未命中。
+7. **Q：多个请求同时写同一个前缀会怎样？**
+   A：同一步里两个请求都 miss，各自计算，第一个登记成功，第二个发现哈希已存在就不登记（它的块保持私有）。不会出错，只是少共享一次。
+8. **Q：前缀缓存和 KV 内存的冲突？**
+   A：缓存块只占「空闲」块，分配时随时可以被驱逐，所以不会降低可用容量——缓存是免费的，只要有空闲块就留着。

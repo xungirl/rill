@@ -221,3 +221,54 @@ fp16 下 38–43/48 个输出和顺序执行逐 token 相同（batch 形状改�
    A：同一步里两个请求都 miss，各自计算，第一个登记成功，第二个发现哈希已存在就不登记（它的块保持私有）。不会出错，只是少共享一次。
 8. **Q：前缀缓存和 KV 内存的冲突？**
    A：缓存块只占「空闲」块，分配时随时可以被驱逐，所以不会降低可用容量——缓存是免费的，只要有空闲块就留着。
+
+---
+
+## Stage 5 — 服务层（Serving API）
+
+### 读代码顺序
+`ember/server/protocol.py` → `ember/server/metrics.py` → `ember/server/async_engine.py` → `ember/server/api.py` → `ember/server/__main__.py` → `tests/tiny_tokenizer.py` → `tests/test_server.py`
+
+### 1. `ember/server/async_engine.py`（核心）
+**(a) 骨架**：`AsyncLLMEngine` = 一个**引擎线程**（`_loop`：收件箱 → `engine.step()` → 把每个 `StepOutput` 投递到对应请求的 `asyncio.Queue`）+ 事件循环这边的 `generate()` 异步生成器（发 add 命令 → 等自己的队列 → 增量反分词、停止串检查 → `yield RequestOutput`）。
+**(b) 为什么**：
+- **GPU 前向是阻塞调用**，放在事件循环里会卡住所有 HTTP 连接。所以引擎独占一个线程；**只有这个线程碰引擎**，引擎本身不需要锁。
+- 线程 → asyncio 只能用 `loop.call_soon_threadsafe(queue.put_nowait, item)`；asyncio 对象不是线程安全的。
+- 反分词和停止串在事件循环里做，让引擎线程的 step 循环尽量紧凑。
+- **背压（backpressure）**：`inflight >= max_inflight` 直接抛 `QueueFullError` → 429。无界排队只会让所有人的延迟一起爆炸，早拒绝让客户端可以重试/换实例。
+- **取消**：`generate` 的 `finally` 只要没正常结束（断连、超时、停止串、异常）就发 abort，序列的 KV 块在下一步就被释放。
+- **停止串**：流式输出时不能把停止串的一部分先发出去——`_stop_holdback` 计算文本末尾有多长是某个停止串的前缀，这部分先扣住。
+- **超时**：用 `asyncio.wait_for` 加剩余时间，超时抛 `RequestTimeoutError` → 504。
+**(c) 语法**：异步生成器（`async def` + `yield`）的 `finally` 在 `aclose()` / 被取消 / 正常结束时都会执行；`queue.Queue`（线程安全）vs `asyncio.Queue`（协程安全）。
+
+### 2. `ember/server/api.py`
+**(a) 骨架**：`create_app()` 返回 FastAPI app：`/v1/completions`、`/v1/chat/completions`、`/v1/models`、`/health`、`/metrics`。`run()` 是两个生成接口共用的骨架；`_stream_body` 生成 SSE（`data: {...}\n\n`，最后 `data: [DONE]`）。lifespan 负责启动/关闭引擎线程。
+**(b) 为什么**：
+- 流式请求**先拿到第一个输出再返回响应头**，这样 429/400 能作为真正的 HTTP 状态码返回（响应头发出后就只能在流里报错了）。代价：响应头在 TTFT 之后才到。
+- 断连检测：流式由 Starlette 的 `StreamingResponse` 自己监听 `http.disconnect` 并取消生成器；非流式用一个轮询 `request.is_disconnected()` 的 watcher 任务。（我一开始流式也加了 watcher，调试时发现问题其实出在测试里：`next(resp.iter_lines())` 丢弃迭代器会关闭连接——服务端正确地把它当成断连 abort 了。）
+- 错误映射：429 背压、504 超时、503 引擎挂了、400 参数错误、422 schema 校验（FastAPI 自动）。
+**(c) 语法**：`@asynccontextmanager` 写 lifespan；`StreamingResponse(async_gen, media_type="text/event-stream")`。
+
+### 3. `ember/server/metrics.py`
+TTFT、ITL（相邻 token 间隔）、TPOT（首 token 之后平均每 token 时间）、e2e 用 Histogram；队列深度、running 数、in-flight、KV 使用率、前缀命中率用 Gauge；请求数按 finish_reason 分的 Counter。每个 app 一个独立 `CollectorRegistry`，测试里可以起多个 server。
+
+### 4. 测试为什么起真的 uvicorn
+in-process ASGI transport 模拟不出「客户端关闭 TCP 连接」。`tests/test_server.py` 在线程里起 uvicorn、随机端口，用 tiny 随机模型 + `tests/tiny_tokenizer.py` 造的 512 词表字节级 tokenizer，CI 不需要下载任何东西。
+
+### Stage 5 面试题
+1. **Q：为什么引擎要单独一个线程，而不是直接在 async handler 里调用？**
+   A：`engine.step()` 是同步阻塞的 GPU 调用（几十毫秒），在事件循环里跑会阻塞所有连接的读写。单独线程 + 消息传递，事件循环永远不阻塞；而且只有一个线程碰引擎，不需要锁。
+2. **Q：TTFT、TPOT、ITL、e2e 的区别？**
+   A：TTFT = 发请求到第一个 token（含排队 + prefill）；ITL = 相邻两个 token 的间隔；TPOT = (e2e − TTFT)/(输出数 − 1)，即 ITL 的平均；e2e = 整个请求。交互场景关心 TTFT 和 TPOT，离线批处理关心吞吐。
+3. **Q：客户端断开后会发生什么？**
+   A：Starlette 取消响应生成器 → `pump` 任务取消 → `generate()` 的 finally 发 abort → 引擎线程在下一轮收件箱处理时 `engine.abort` 释放块。测试 `test_client_disconnect_aborts_sequence` 断言序列被移除、已用块数归零、abort 计数增加。
+4. **Q：为什么要背压？429 和排队怎么选？**
+   A：超过容量后排队只会让 TTFT 无限增长（开环负载下队列线性增长）；429 让上游负载均衡器/客户端去重试或换实例。阈值 `max_inflight` 应该按容量（见 docs/CAPACITY.md）设定。
+5. **Q：SSE 是什么？为什么不用 WebSocket？**
+   A：Server-Sent Events，基于普通 HTTP 响应的单向流（`text/event-stream`，`data: ...\n\n`）。OpenAI API 用它；简单、兼容代理和负载均衡；生成是单向的，不需要 WebSocket 的双向通道。
+6. **Q：停止串在流式输出里有什么坑？**
+   A：停止串可能跨多个 token 出现，如果每个 token 就立刻发，停止串的前半截已经发给客户端了。解决：扣住「可能是停止串前缀」的尾部文本（`_stop_holdback`），确认不是再发；命中后截断并 abort 序列。
+7. **Q：结构化日志记什么？**
+   A：每个请求结束一行 JSON：request_id、status、finish_reason、prompt/completion token 数、TTFT、e2e。可以直接被日志系统解析聚合。
+8. **Q：这个服务器的扩展性瓶颈在哪？**
+   A：单进程单 GPU；引擎线程和 Python GIL：HTTP 处理、反分词和引擎调度共享 GIL，高并发时 CPU 侧开销会和 step 抢 GIL。生产系统（vLLM）把 API server 和引擎拆成不同进程用 ZMQ 通信，就是为了这个。

@@ -49,3 +49,16 @@
   system prompt workload. fp16 output agreement on/off 29–31/32.
 - Problem: first benchmark run crashed at the end (cv of an all-zero hit-rate series divided by zero) and lost
   its results; fixed `summarize` and reran.
+
+## 2026-11-14 — Stage 5: serving API
+- FastAPI app with `/v1/completions`, `/v1/chat/completions` (JSON + SSE, `stream_options.include_usage`),
+  `/v1/models`, `/health`, `/metrics`; `AsyncLLMEngine` with a dedicated engine thread; 429 back-pressure, 504
+  timeouts, abort on disconnect / stop string / timeout, stop-string hold-back, JSON request logs.
+- Tests (10) run a real uvicorn server on localhost with the tiny model + a generated 512-token byte-level
+  tokenizer: streaming == non-streaming text, chat role chunk, stop strings never leak, disconnect frees blocks,
+  429 then recovery, 504, validation errors.
+- Debugging story: the 429 test kept getting 200 — the server was *correctly* aborting: `next(resp.iter_lines())`
+  discards the iterator, which closes the response, i.e. a client disconnect. I had also briefly added an
+  `is_disconnected()` watcher to streaming responses; it is unnecessary (Starlette cancels the body iterator on
+  disconnect) and was removed.
+- Port 8000 is used by another app on this machine → smoke test and benchmarks use 8100/8101.

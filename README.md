@@ -75,6 +75,21 @@ continuous batching (work in progress, see Project Journey). Runs on an Apple-si
   empty blocks were free → empty blocks are now handed out first. In fp16, 29–31/32 greedy outputs match cache-off
   (different matmul shapes on a hit); exact in fp32.
 
+### 5. Serving API
+- **Goal**: an OpenAI-compatible HTTP server whose event loop never blocks on the GPU.
+- **Decision & alternatives**: FastAPI/uvicorn for HTTP; the synchronous engine runs in **one dedicated thread**
+  that is its only user (no locks). Handlers send `add`/`abort` commands through a thread-safe inbox and await a
+  per-request `asyncio.Queue` filled via `loop.call_soon_threadsafe`. Detokenization and stop strings run on the
+  event loop. Alternatives: `run_in_executor` per step (more hand-offs, same GIL), or a separate engine process
+  over ZMQ like vLLM (better isolation from the GIL; more moving parts than this project needs).
+- **Built**: `ember/server/{api,async_engine,metrics,protocol,__main__}.py`.
+- **Verified**: 10 API tests against a real localhost uvicorn server (tiny model, generated tokenizer — no
+  download): streaming == non-streaming, stop strings never leak partially, client disconnect aborts the
+  sequence and frees its blocks, 429 back-pressure then recovery, 504 timeout, 400/422 validation.
+- **Measured**: functional smoke test on the real model in `results/stage5_smoke.txt`; load results in Stage 6.
+- **Problems / fixes**: a "failing" back-pressure test was the server correctly treating a garbage-collected
+  `iter_lines()` iterator as a client disconnect — the test was fixed, not the server.
+
 ### Key metrics
 
 | metric | value | how measured | source |
@@ -92,10 +107,19 @@ continuous batching (work in progress, see Project Journey). Runs on an Apple-si
 | prefix cache: batched throughput (B=16) | 48.6 → 151.0 tok/s | same | `results/stage4_prefix_cache.json` |
 
 ### Next steps
-OpenAI-compatible server (5) →
-load testing (6) → sampling & int8 (7) → ops polish (8).
+Load testing (6) → sampling & int8 (7) → ops polish (8).
 
 ## How to run
+
+Serve (OpenAI-compatible; works with the `openai` SDK by pointing `base_url` at it):
+```bash
+uv run python -m ember.server --port 8100            # MPS fp16 if available, else CPU fp32
+curl -s localhost:8100/v1/chat/completions -H 'content-type: application/json' \
+  -d '{"messages":[{"role":"user","content":"Hello!"}],"temperature":0,"max_tokens":32}'
+curl -s localhost:8100/metrics | grep ember_
+```
+
+Tests and benchmarks:
 
 ```bash
 uv sync                                  # Python 3.15, torch 2.15

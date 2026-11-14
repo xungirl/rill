@@ -1,0 +1,46 @@
+# Stage 5 smoke test against the real model (uv run python -m ember.server --port 8100), Sat Nov 14 04:23:13 PST 2026
+$ curl -s localhost:8100/v1/chat/completions -d {"messages":[{"role":"user","content":"What is the capital of France? Answer in one sentence."}],"temperature":0,"max_tokens":40}
+{"id":"chatcmpl-deda38bf3d6247caaef485ba","created":1794658993,"model":"Qwen/Qwen3-0.6B","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"The capital of France is Paris."},"finish_reason":"stop"}],"usage":{"prompt_tokens":24,"completion_tokens":8,"total_tokens":32}}
+
+$ curl -sN localhost:8100/v1/completions -d {"prompt":"The three primary colors are","temperature":0,"max_tokens":12,"stream":true,"stream_options":{"include_usage":true}}
+data: {"id": "cmpl-7e38a27a278c4570a8eda043", "object": "text_completion", "created": 1794658993, "model": "Qwen/Qwen3-0.6B", "choices": [{"index": 0, "text": "", "logprobs": null, "finish_reason": null}]}
+
+data: {"id": "cmpl-7e38a27a278c4570a8eda043", "object": "text_completion", "created": 1794658993, "model": "Qwen/Qwen3-0.6B", "choices": [{"index": 0, "text": " red", "logprobs": null, "finish_reason": null}]}
+
+data: {"id": "cmpl-7e38a27a278c4570a8eda043", "object": "text_completion", "created": 1794658993, "model": "Qwen/Qwen3-0.6B", "choices": [{"index": 0, "text": ",", "logprobs": null, "finish_reason": null}]}
+
+data: {"id": "cmpl-7e38a27a278c4570a8eda043", "object": "text_completion", "created": 1794658993, "model": "Qwen/Qwen3-0.6B", "choices": [{"index": 0, "text": " blue", "logprobs": null, "finish_reason": null}]}
+
+data: {"id": "cmpl-7e38a27a278c4570a8eda043", "object": "text_completion", "created": 1794658993, "model": "Qwen/Qwen3-0.6B", "choices": [{"index": 0, "text": ",", "logprobs": null, "finish_reason": null}]}
+
+data: {"id": "cmpl-7e38a27a278c4570a8eda043", "object": "text_completion", "created": 1794658993, "model": "Qwen/Qwen3-0.6B", "choices": [{"index": 0, "text": " and", "logprobs": null, "finish_reason": null}]}
+
+data: {"id": "cmpl-7e38a27a278c4570a8eda043", "object": "text_completion", "created": 1794658993, "model": "Qwen/Qwen3-0.6B", "choices": [{"index": 0, "text": " yellow", "logprobs": null, "finish_reason": null}]}
+
+data: {"id": "cmpl-7e38a27a278c4570a8eda043", "object": "text_completion", "created": 1794658993, "model": "Qwen/Qwen3-0.6B", "choices": [{"index": 0, "text": ".", "logprobs": null, "finish_reason": null}]}
+
+data: {"id": "cmpl-7e38a27a278c4570a8eda043", "object": "text_completion", "created": 1794658993, "model": "Qwen/Qwen3-0.6B", "choices": [{"index": 0, "text": " The", "logprobs": null, "finish_reason": null}]}
+
+data: {"id": "cmpl-7e38a27a278c4570a8eda043", "object": "text_completion", "created": 1794658993, "model": "Qwen/Qwen3-0.6B", "choices": [{"index": 0, "text": " three", "logprobs": null, "finish_reason": null}]}
+
+data: {"id": "cmpl-7e38a27a278c4570a8eda043", "object": "text_completion", "created": 1794658993, "model": "Qwen/Qwen3-0.6B", "choices": [{"index": 0, "text": " secondary", "logprobs": null, "finish_reason": null}]}
+
+data: {"id": "cmpl-7e38a27a278c4570a8eda043", "object": "text_completion", "created": 1794658993, "model": "Qwen/Qwen3-0.6B", "choices": [{"index": 0, "text": " colors", "logprobs": null, "finish_reason": null}]}
+
+data: {"id": "cmpl-7e38a27a278c4570a8eda043", "object": "text_completion", "created": 1794658994, "model": "Qwen/Qwen3-0.6B", "choices": [{"index": 0, "text": " are", "logprobs": null, "finish_reason": "length"}]}
+
+data: {"id": "cmpl-7e38a27a278c4570a8eda043", "object": "text_completion", "created": 1794658994, "model": "Qwen/Qwen3-0.6B", "choices": [], "usage": {"prompt_tokens": 5, "completion_tokens": 12, "total_tokens": 17}}
+
+data: [DONE]
+
+
+$ stop sequence: {"prompt":"Count: 1, 2, 3,","stop":[" 7"],"max_tokens":30,"temperature":0}
+{"id":"cmpl-bdad9c9e74ab4bbdb8a1463c","object":"text_completion","created":1794658994,"model":"Qwen/Qwen3-0.6B","choices":[{"index":0,"text":" 4, 5, 6,","logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":11,"completion_tokens":11,"total_tokens":22}}
+
+$ curl -s localhost:8100/metrics | grep -E "^ember_(ttft_seconds_count|requests_total|kv_cache_usage|queue_depth|prefix)"
+ember_ttft_seconds_count 3.0
+ember_requests_total{finish_reason="stop"} 2.0
+ember_requests_total{finish_reason="length"} 1.0
+ember_queue_depth 0.0
+ember_kv_cache_usage 0.0017094017094017094
+ember_prefix_cache_hit_rate 0.0

@@ -137,3 +137,11 @@ Correctness: greedy outputs cache-on vs cache-off are identical for 29/32 (one-a
 requests on MPS fp16 — a hit computes only the suffix, i.e. different matmul shapes and fp16 rounding. On the tiny
 fp32 model the outputs are identical in all cases, including a 40-block pool that forces LRU evictions
 (`tests/test_prefix_cache.py::test_engine_outputs_identical_with_cache_on_and_off`).
+
+## Stage 5 — serving API (functional, not a benchmark)
+
+`results/stage5_smoke.txt` is a captured session against the real model
+(`uv run python -m ember.server --port 8100`): a chat completion ("The capital of France is Paris.", TTFT 194 ms
+for the first request after start-up), an SSE stream with `include_usage`, a stop-sequence request
+(`" 7"` → text ends at `" 6,"`, `finish_reason: "stop"`), and the Prometheus metrics it produced. Serving
+performance is measured under load in Stage 6.

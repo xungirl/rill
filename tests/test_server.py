@@ -185,7 +185,8 @@ def test_client_disconnect_aborts_sequence(server: tuple[str, AsyncLLMEngine]) -
 
 def test_validation_errors(server: tuple[str, AsyncLLMEngine]) -> None:
     url, _ = server
-    assert httpx.post(url + "/v1/completions", json={"prompt": "x", "temperature": 0.7}).status_code == 400
+    assert httpx.post(url + "/v1/completions", json={"prompt": "x", "top_k": 0}).status_code == 400
+    assert httpx.post(url + "/v1/completions", json={"prompt": "x", "temperature": 3.0}).status_code == 422
     assert httpx.post(url + "/v1/completions", json={"prompt": "x", "max_tokens": 0}).status_code == 422
     r = httpx.post(url + "/v1/completions", json={"prompt": "x", "temperature": 0, "max_tokens": 40000})
     assert r.status_code == 400 and "exceeds" in r.json()["error"]["message"]
@@ -218,3 +219,16 @@ def test_request_timeout_returns_504_and_frees(tmp_path: Path) -> None:
         r = httpx.post(url + "/v1/completions", json=body, timeout=30)
         assert r.status_code == 504
         assert wait_until(lambda: not aengine.engine.has_unfinished())
+
+
+def test_seeded_sampling_is_reproducible_over_http(server: tuple[str, AsyncLLMEngine]) -> None:
+    url, _ = server
+    body = {"prompt": "hello world", "temperature": 1.0, "top_p": 0.9, "max_tokens": 24, "ignore_eos": True}
+
+    def text(seed: int) -> str:
+        r = httpx.post(url + "/v1/completions", json={**body, "seed": seed})
+        assert r.status_code == 200
+        return str(r.json()["choices"][0]["text"])
+
+    assert text(7) == text(7)
+    assert len({text(s) for s in range(5)}) > 1  # different seeds explore different samples

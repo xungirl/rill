@@ -27,6 +27,7 @@ class EngineConfig:
     num_blocks: int | None = None  # if None, derived from kv_cache_gib
     kv_cache_gib: float = 2.0
     enable_prefix_caching: bool = True
+    seed: int = 0  # RNG for requests that sample without their own seed
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
 
 
@@ -66,10 +67,13 @@ class LLMEngine:
         self.seqs: dict[int, Sequence] = {}
         self._ids = itertools.count()
         self.stats = EngineStats()
+        self._rng = torch.Generator().manual_seed(self.config.seed)
 
     # ---------------------------------------------------------------- requests
     def add_request(self, prompt_token_ids: list[int], sampling: SamplingParams | None = None) -> int:
         seq = Sequence(next(self._ids), list(prompt_token_ids), sampling or SamplingParams())
+        seed = seq.sampling.seed
+        seq.generator = torch.Generator().manual_seed(seed) if seed is not None else self._rng
         self.scheduler.add(seq)
         self.seqs[seq.seq_id] = seq
         return seq.seq_id
@@ -89,7 +93,11 @@ class LLMEngine:
             return []
         logits = self.runner.execute(sched.batch)
         sampling_rows = [s for s in sched.batch if s.completes_sequence]
-        token_ids = sample(logits, [s.seq.sampling for s in sampling_rows]) if sampling_rows else []
+        token_ids = (
+            sample(logits, [s.seq.sampling for s in sampling_rows], [s.seq.generator for s in sampling_rows])
+            if sampling_rows
+            else []
+        )
         tokens = iter(token_ids)
 
         now = time.monotonic()

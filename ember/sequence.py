@@ -6,6 +6,8 @@ import enum
 import time
 from dataclasses import dataclass, field
 
+import torch
+
 from ember.sampling import SamplingParams
 
 
@@ -41,6 +43,9 @@ class Sequence:
     finish_reason: str | None = None
     num_preemptions: int = 0
     first_token_time: float | None = None
+    # RNG for sampling; per-request when SamplingParams.seed is set. Survives preemption,
+    # so a recomputed sequence continues its random stream instead of restarting it.
+    generator: torch.Generator | None = None
 
     def __post_init__(self) -> None:
         if not self.prompt_token_ids:

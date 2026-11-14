@@ -83,9 +83,14 @@ def create_app(
     def sampling_for(req: CompletionRequest | ChatCompletionRequest, prompt_len: int) -> SamplingParams:
         if prompt_len + req.max_tokens > max_model_len:
             raise ValueError(f"prompt ({prompt_len}) + max_tokens ({req.max_tokens}) exceeds {max_model_len}")
-        if req.temperature > 0:
-            raise ValueError("only greedy decoding (temperature=0) is supported by this build")
-        return SamplingParams(max_tokens=req.max_tokens, temperature=req.temperature, ignore_eos=req.ignore_eos)
+        return SamplingParams(
+            max_tokens=req.max_tokens,
+            temperature=req.temperature,
+            top_p=req.top_p,
+            top_k=req.top_k,
+            seed=req.seed,
+            ignore_eos=req.ignore_eos,
+        )
 
     async def run(
         request: Request,

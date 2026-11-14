@@ -11,6 +11,7 @@ import uvicorn
 
 from ember.engine import EngineConfig, LLMEngine
 from ember.loader import DEFAULT_MODEL, load_model, resolve_model_dir
+from ember.quant import quantize_int8
 from ember.scheduler import SchedulerConfig
 from ember.server.api import create_app
 from ember.server.async_engine import AsyncLLMEngine
@@ -34,11 +35,14 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--max-inflight", type=int, default=128, help="accepted requests before 429")
     ap.add_argument("--request-timeout", type=float, default=600.0)
     ap.add_argument("--max-model-len", type=int, default=4096)
+    ap.add_argument("--int8", action="store_true", help="weight-only int8 for the decoder linears")
     args = ap.parse_args(argv)
 
     logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(message)s")
     dtype = DTYPES[args.dtype] if args.dtype else (torch.float16 if args.device == "mps" else torch.float32)
     model = load_model(args.model, device=args.device, dtype=dtype)
+    if args.int8:
+        model = quantize_int8(model)
     engine = LLMEngine(
         model,
         EngineConfig(

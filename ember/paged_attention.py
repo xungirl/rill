@@ -7,7 +7,7 @@ i.e. a flat array of token *slots*; block b owns slots [b*bs, (b+1)*bs).
 A forward step processes a packed batch of T new tokens from B sequences
 (any mix of prefill chunks and single decode tokens). Per layer we:
   1. scatter the new k/v into their slots           (slot_mapping  [T])
-  2. gather each sequence's full context back out   (gather_slots  [B, S])
+  2. gather each sequence's blocks back out          (block_ids     [B*max_blocks])
      into a padded [B, n_kv, S, d] tensor, S = max_blocks * bs
   3. run batched SDPA with a [B, 1, max_q, S] mask that encodes both
      "key exists" (j < context_len) and causality (j <= query position).
@@ -60,7 +60,8 @@ class PagedAttentionMetadata:
     shared by all layers."""
 
     slot_mapping: Tensor  # [T] destination slot of each new token
-    gather_slots: Tensor  # [B, S] slot of every (padded) context position, S = max_blocks*bs
+    block_ids: Tensor  # [B * max_blocks] every sequence's block table, padded with block 0 (masked out)
+    max_blocks: int
     query_index: Tensor  # [T] position of each packed token in the padded [B*max_q] layout
     mask: Tensor  # [B, 1, max_q, S] bool
     batch_size: int
@@ -86,8 +87,7 @@ class PagedAttentionMetadata:
             for pos in range(ctx - q_len, ctx):
                 slots.append(table[pos // block_size] * block_size + pos % block_size)
             qidx.extend(range(row * max_q, row * max_q + q_len))
-        padded = torch.tensor([t + [0] * (max_blocks - len(t)) for t in block_tables], dtype=torch.long)
-        gather_slots = (padded.unsqueeze(-1) * block_size + torch.arange(block_size)).flatten(1)
+        padded = [blk for t in block_tables for blk in t + [0] * (max_blocks - len(t))]
 
         # mask[b, 0, i, j]: query row i of seq b (absolute pos ctx-q_len+i) may see key j.
         ctx_t = torch.tensor(context_lens).view(b, 1, 1)
@@ -100,7 +100,8 @@ class PagedAttentionMetadata:
         mask = (j <= q_pos) & (j < ctx_t)
         return cls(
             slot_mapping=torch.tensor(slots, dtype=torch.long, device=device),
-            gather_slots=gather_slots.to(device),
+            block_ids=torch.tensor(padded, dtype=torch.long, device=device),
+            max_blocks=max_blocks,
             query_index=torch.tensor(qidx, dtype=torch.long, device=device),
             mask=mask.unsqueeze(1).to(device),
             batch_size=b,
@@ -115,20 +116,33 @@ class PagedAttention:
         self.cache = cache
         self.meta = meta
 
+    def _gather(self, pool: Tensor) -> Tensor:
+        """[num_slots, n_kv, d] pool -> [B, n_kv, S, d] context of every sequence.
+
+        Copies whole blocks with index_select on a [num_blocks, block_size*n_kv*d]
+        view. (On MPS this is ~7x faster than advanced indexing `pool[slot_ids]`,
+        measured in benchmarks/micro_gather.py.)
+        """
+        m = self.meta
+        n_kv, d = pool.shape[1], pool.shape[2]
+        blocks = pool.view(self.cache.num_blocks, -1).index_select(0, m.block_ids)
+        return blocks.view(m.batch_size, m.max_blocks * self.cache.block_size, n_kv, d).transpose(1, 2)
+
     def forward(self, layer_idx: int, q: Tensor, k: Tensor, v: Tensor) -> Tensor:
         m = self.meta
         k_pool, v_pool = self.cache.k[layer_idx], self.cache.v[layer_idx]
         # 1. write new K/V into their slots
         k_pool.index_copy_(0, m.slot_mapping, k)
         v_pool.index_copy_(0, m.slot_mapping, v)
-        # 2. gather each sequence's blocks -> [B, max_blocks*bs, n_kv, d] -> [B, n_kv, S, d]
-        keys = k_pool[m.gather_slots].transpose(1, 2)
-        vals = v_pool[m.gather_slots].transpose(1, 2)
+        # 2. gather each sequence's blocks -> [B, n_kv, S, d]
+        keys, vals = self._gather(k_pool), self._gather(v_pool)
         # 3. scatter packed queries into a padded [B, H, max_q, d] batch, attend, unpack
         n_heads, d = q.shape[1], q.shape[2]
-        q_pad = q.new_zeros(m.batch_size * m.max_q, n_heads, d)
-        q_pad[m.query_index] = q
-        q_pad = q_pad.view(m.batch_size, m.max_q, n_heads, d).transpose(1, 2)
-        out = sdpa(q_pad, keys, vals, m.mask)  # [B, H, max_q, d]
+        if m.max_q == 1:  # pure decode batch: packed layout already is the padded layout
+            q_pad = q.view(m.batch_size, 1, n_heads, d)
+        else:
+            q_pad = q.new_zeros(m.batch_size * m.max_q, n_heads, d).index_copy_(0, m.query_index, q)
+            q_pad = q_pad.view(m.batch_size, m.max_q, n_heads, d)
+        out = sdpa(q_pad.transpose(1, 2), keys, vals, m.mask)  # [B, H, max_q, d]
         out = out.transpose(1, 2).reshape(m.batch_size * m.max_q, n_heads, d)
-        return out[m.query_index]
+        return out if m.max_q == 1 else out.index_select(0, m.query_index)

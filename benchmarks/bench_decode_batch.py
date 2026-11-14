@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import time
+from typing import Any
 
 import torch
 
@@ -45,7 +46,7 @@ def main() -> None:
             dt = time.perf_counter() - t
             steps = engine.stats.steps - steps0
             runs.append({"tok_s": b * NEW_TOKENS / dt, "ms_per_step": dt / steps * 1000, "load1_before": before})
-        row = {
+        row: dict[str, Any] = {
             "batch": b,
             "gate": gate,
             "runs": runs,

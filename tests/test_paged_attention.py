@@ -78,7 +78,7 @@ def test_metadata_mask_and_slots() -> None:
     assert m[0, 1].tolist() == [True, True, True, True, False, False]  # pos 3 sees 0..3
     assert m[1, 0].tolist() == [True] * 5 + [False]  # decode at pos 4 sees 0..4
     assert m[1, 1].any()  # padding row is never fully masked (fully masked -> NaN)
-    assert meta.gather_slots[0].tolist() == [10, 11, 6, 7, 0, 1]
+    assert meta.block_ids.tolist() == [5, 3, 0, 0, 1, 7]  # seq0 padded with block 0
 
 
 def _paged_greedy(model: Qwen3Model, prompts: list[list[int]], max_tokens: int, block_size: int) -> list[list[int]]:

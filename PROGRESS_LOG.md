@@ -87,3 +87,16 @@
   batch-32 −1%.
 - Problem: top-p at batch 32 was 56% slower than greedy; per-row CPU multinomial was the cost → inverse-CDF on
   device (+69% throughput for sampled decoding).
+
+## 2026-11-14 — Stage 8: ops polish
+- Dockerfile (CPU, uv, non-root, healthcheck, mounted HF cache), `.dockerignore`; Linux torch from the PyTorch CPU
+  index via `[tool.uv.sources]` (lockfile has no NVIDIA packages). Built and smoke-tested under colima, then
+  stopped colima and restored the original Docker context.
+- CI workflow (ruff, format, strict mypy, pytest). All steps run locally and pass; real-model tests skip without
+  the checkpoint (64 passed / 6 skipped) and run with it (70 passed).
+- docs/ARCHITECTURE.md (layers, request walk-through, invariants table), docs/CAPACITY.md (memory, measured
+  envelope, knob sizing).
+- Reran Stage 3/4 benchmarks on the final code: offline batching unchanged (377.2 tok/s); prefix cache batched
+  gain is 2.4× now (cache-off got faster from the Stage 6 attention fix). Originals kept as `*_at_stageN.json`.
+- Problem: container could not find the model at first — mount path assumed root; fixed with `HF_HUB_CACHE`.
+- Full test suite run 10× → `results/stage8_test_10x.txt`.

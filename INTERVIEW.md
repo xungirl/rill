@@ -202,6 +202,7 @@ fp16 下 38–43/48 个输出和顺序执行逐 token 相同（batch 形状改�
 **(b) 为什么**：命中的块可能本来在空闲链表里（ref=0），拿走它们会减少空闲块数，所以必须「先占住命中块，再检查剩余能否分配」，不行就回滚，保证没有副作用。
 
 ### Stage 4 实测（`results/stage4_prefix_cache.json`）
+（最终代码重跑：命中 TTFT 359.8 → 39.6 ms；批处理 63.1 → 153.5 tok/s，2.4 倍——因为 Stage 6 的分组注意力修复让「不开缓存」的 prefill 也变快了，相对收益变小。面试时用最终数字。）
 587-token 共享 system prompt + 32 个不同问题：命中请求的 TTFT **361.5 → 39.5 ms（9.2 倍）**，93% 的 prompt token 来自缓存；16 并发批处理吞吐 **48.6 → 151.0 tok/s（3.1 倍）**。批处理时命中率只有 84%：前 16 个请求在同一步被接纳，那时前缀块还没写完、不能共享。fp16 下缓存开/关 greedy 一致 29–31/32。
 
 ### Stage 4 面试题
@@ -366,3 +367,39 @@ in-process ASGI transport 模拟不出「客户端关闭 TCP 连接」。`tests/
    A：Qwen3 没有更小的同词表 draft 模型可用（0.6B 已经是最小的）；n-gram/prompt-lookup 的投机解码在分页缓存上需要回滚 KV slot，时间有限下选了能完整做完、能量化评估的 int8。这是明确的取舍。
 8. **Q：top-p 实现里为什么用「之前的累计概率」而不是「包括自己的累计概率」？**
    A：用包括自己的累计 ≤ p 会把「跨过 p 的那个 token」也去掉，可能一个都不剩；用之前的累计 < p 保留它，保证集合的总概率 ≥ p 且至少保留 1 个 token。测试用暴力参考实现做了 200 个随机例子的对比。
+
+---
+
+## Stage 8 — 工程化（Ops polish）
+
+### 读代码顺序
+`Dockerfile` → `.dockerignore` → `pyproject.toml`（`[tool.uv.sources]`、ruff/mypy/pytest 配置）→ `.github/workflows/ci.yml` → `tests/conftest.py`（`real_model` 自动跳过）→ `docs/ARCHITECTURE.md` → `docs/CAPACITY.md`
+
+### 1. `Dockerfile`
+**(a) 骨架**：`python:3.15-slim` → 拷贝 uv → 先只拷 `pyproject.toml`/`uv.lock` 装依赖（缓存层）→ 再拷代码 → 非 root 用户 → HEALTHCHECK 打 `/health` → ENTRYPOINT 启动 CPU 服务。
+**(b) 为什么**：
+- **依赖层和代码层分开**：改代码不会重装 torch，构建快。
+- **Linux 上 torch 走 PyTorch CPU 索引**（`[tool.uv.sources]` 带 `sys_platform == 'linux'` marker）：PyPI 上 Linux 版 torch 会拉几个 GB 的 CUDA 包；改完后 lock 文件里 nvidia 包数为 0，镜像内容 539 MB。macOS 仍用 PyPI 的 MPS 版。
+- **模型不打进镜像**：挂载只读的 HF 缓存（`-v ~/.cache/huggingface:/models:ro`，`HF_HUB_CACHE=/models/hub`），镜像小、权重和代码分开发布。我第一次写的挂载路径是 `/root/...`，但容器里是非 root 用户——跑起来才发现，改成显式的 `HF_HUB_CACHE`。
+- 实测：在 colima 里构建（1 分 44 秒）并跑通了一次真实模型的 chat 请求（`results/stage8_docker_*`）。
+**(c) 语法**：`COPY --from=ghcr.io/astral-sh/uv:0.12.15 /uv /usr/local/bin/uv` 是多阶段拷贝二进制；`uv sync --frozen --no-dev --no-install-project` 只装依赖不装项目本身。
+
+### 2. CI（`.github/workflows/ci.yml`）
+ruff check → ruff format --check → mypy（strict）→ pytest。CI 没有模型：`tests/conftest.py` 在 HF 缓存里找不到 Qwen3-0.6B 时，给所有 `@pytest.mark.real_model` 的测试加 skip；其余测试用 tiny 随机权重模型 + 生成的 512 词表 tokenizer，CPU 上 6 秒跑完。本机用空的 `HF_HUB_CACHE` 模拟了 CI：64 passed / 6 skipped；有模型时 70 passed（`results/stage8_ci_local.txt`）。没有远端仓库，所以 CI 本身没真正跑过——这一点要诚实说。
+
+### 3. 严格类型检查的取舍
+`mypy --strict` 全开，只关了 `warn_return_any`（torch 的 `nn.Module.__call__` 返回 `Any`，每个 `return self.proj(x)` 都会报）；对没有类型的第三方库（safetensors、transformers）在 loader/tests/benchmarks 里允许 untyped call。
+
+### Stage 8 面试题
+1. **Q：为什么镜像里不放模型权重？**
+   A：权重 1.2 GB、更新节奏和代码不同；挂载卷/对象存储让同一个镜像服务不同模型版本，镜像拉取更快。代价是部署时要保证卷存在（HEALTHCHECK 的 start-period 留了 120 s 给加载）。
+2. **Q：CI 没有 GPU、没有模型，怎么保证测试有意义？**
+   A：核心逻辑（block manager、调度器、分页注意力、前缀缓存、采样、HTTP 层）都用 tiny 随机模型在 fp32 CPU 上测「和参考实现逐 token 相同」，不依赖真实权重；真实模型的数值对齐测试本地跑，CI 自动跳过。
+3. **Q：怎么保证测试不 flaky？**
+   A：所有随机性都有种子（`torch.manual_seed` autouse fixture、`random.Random(seed)`、hypothesis `derandomize=True`）；服务器测试用随机空闲端口；等待用有超时的轮询而不是固定 sleep。最后把整个测试集连续跑 10 次，结果存在 `results/stage8_test_10x.txt`。
+4. **Q：容量规划怎么做？**
+   A：见 `docs/CAPACITY.md`：KV 每 token 112 KiB → 2 GiB 放 18,724 token；实测服务拐点 ~2 req/s；用 Little's law（L = λW）估在途请求数来设 `--max-inflight`；chunk 大小在 ITL 平滑和 prefill 效率之间取舍（1024 块的混合步 687.5 ms vs 128 块 129.7 ms）。
+5. **Q：如果要上生产，下一步做什么？**
+   A：API server 和引擎拆进程（避开 GIL）；CUDA 上用 FlashAttention/FlashInfer 的 paged kernel 和 CUDA graphs；多副本 + 负载均衡按 KV 使用率/队列深度路由；按 Prometheus 指标做告警（TTFT p99、队列深度、拒绝率）；请求级限流。
+6. **Q：Prometheus 指标里最重要的几个？**
+   A：TTFT p99（用户体验）、队列深度和 429 拒绝数（过载信号）、KV 使用率和抢占次数（内存压力）、step 时长（引擎健康）、前缀命中率（缓存是否有效）。

@@ -264,3 +264,34 @@ The embedding / tied LM head (26% of parameters) stays fp16, which is why weight
   (scratch profiling). Inverse-CDF sampling on the device (one uniform per row from the request's own generator,
   batched `cumsum` + `searchsorted`) brought the sampler to ~22 ms and top-p throughput to 398.5 tok/s (+69%).
   The remaining gap to greedy is mostly the full-vocabulary sort needed for top-p.
+
+## Stage 8 — reruns on the final code
+
+The Stage 3 and Stage 4 tables were measured before two later fixes (split decode/prefill attention groups in
+Stage 6, inverse-CDF sampler in Stage 7). Both benchmarks were rerun unchanged on the final code; the originals
+are kept as `results/stage3_batching_at_stage3.json` and `results/stage4_prefix_cache_at_stage4.json`, and the
+reruns overwrite `results/stage3_batching.json` / `results/stage4_prefix_cache.json` (logs:
+`results/stage8_rerun_*.log`; load1 at start 1.3–3.9, all under the gate).
+
+| benchmark | at its stage | final code |
+|---|---|---|
+| sequential, 48 req | 41.4 tok/s | 41.7 tok/s |
+| static B=32 | 308.2 tok/s | 305.7 tok/s |
+| continuous B=32 | 377.3 tok/s | 377.2 tok/s |
+| continuous B=32, tight KV (preemptions) | 278.6 tok/s (34) | 286.9 tok/s (34) |
+| prefix cache, TTFT of hits (cache off → on) | 361.5 → 39.5 ms | 359.8 → 39.6 ms |
+| prefix cache, batched B=16 throughput (off → on) | 48.6 → 151.0 tok/s (3.1×) | **63.1 → 153.5 tok/s (2.4×)** |
+| outputs identical cache on vs off (fp16) | 29/32, 31/32 | 29/32, 32/32 |
+
+Offline batching is decode-dominated (short prompts), so it is unchanged within noise. The cache-off batched
+prefix run is prefill-heavy (16 × 614-token prompts in mixed steps) and got 30% faster from the split-attention fix,
+which shrinks the relative benefit of the prefix cache from 3.1× to 2.4×; the README reports the final numbers.
+
+## Stage 8 — Docker and CI (functional)
+- `docker build -t ember:cpu .` under colima (aarch64 VM, Docker 29.5.2): built in 1:44, 539 MB content
+  (`results/stage8_docker_build.log`). Torch inside is `2.15.0+cpu` from the PyTorch CPU index.
+- Container smoke test with the HF cache mounted read-only: `/health` ok, chat completion "The capital of France
+  is Paris." (CPU fp32 in the VM: TTFT 0.91 s, e2e 3.70 s for 8 tokens) — `results/stage8_docker_smoke.txt`.
+- CI steps run locally: ruff, ruff format --check, mypy (strict), pytest without the model (64 passed, 6 skipped)
+  and with it (70 passed) — `results/stage8_ci_local.txt`. GitHub Actions itself was not run (no remote).
+- Full test suite 10× in a row: `results/stage8_test_10x.txt`.

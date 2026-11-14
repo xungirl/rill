@@ -1,7 +1,35 @@
 # ember
 
-A from-scratch LLM inference engine for Qwen3, written in plain PyTorch: own model code, paged KV cache,
-continuous batching (work in progress, see Project Journey). Runs on an Apple-silicon laptop (MPS) or CPU.
+A from-scratch LLM inference engine and OpenAI-compatible serving stack for **Qwen3-0.6B**, in plain PyTorch:
+own model code (no `transformers` in the engine), a **paged KV cache** with ref-counted blocks and **prefix
+caching**, an iteration-level **continuous-batching scheduler** with chunked prefill and preemption, sampling with
+per-request seeds, optional **int8 weights**, and a FastAPI server with SSE streaming, back-pressure and
+Prometheus metrics. Built and measured on one Apple M2 laptop (MPS); every number below comes from a run on that
+machine, with raw outputs in `results/` (see [BENCHMARK.md](BENCHMARK.md)).
+
+```
+            HTTP clients ──► FastAPI (asyncio)  /v1/completions  /v1/chat/completions  /metrics
+                               │  tokenize · back-pressure (429) · timeouts (504) · SSE · stop strings
+                               │  inbox: add/abort            ▲ per-request asyncio.Queue
+                               ▼  (thread-safe queue)         │ (call_soon_threadsafe)
+ ┌─────────────────────────── engine thread ──────────────────┴───────────────────────────────┐
+ │ LLMEngine.step():  Scheduler.schedule() ─► ModelRunner.execute() ─► sample() ─► update       │
+ │                                                                                             │
+ │ Scheduler           waiting deque / running list · decode-first · token budget ·            │
+ │                     chunked prefill · preempt newest + recompute · static policy (baseline) │
+ │ BlockManager        block pool · free list = LRU (OrderedDict) · block tables · ref counts · │
+ │                     chained block hashes → prefix cache                                     │
+ └─────────────────────────────────────────┬───────────────────────────────────────────────────┘
+                                           ▼  packed tokens [T] + PagedAttentionMetadata
+ ┌──────────────────────────── Qwen3 (MPS fp16 / CPU fp32, optional int8 linears) ──────────────┐
+ │ embed → 28 × [RMSNorm → GQA attn (q/k RMSNorm, RoPE) → + → RMSNorm → SwiGLU → +] → RMSNorm → │
+ │ tied LM head (only rows that sample)                                                         │
+ │ PagedAttention per layer: index_copy_ new K/V into slots → index_select blocks →             │
+ │                           decode group & prefill group → padded SDPA with causal+length mask │
+ └──────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · capacity: [docs/CAPACITY.md](docs/CAPACITY.md) ·
+interview notes (Chinese): [INTERVIEW.md](INTERVIEW.md) · log: [PROGRESS_LOG.md](PROGRESS_LOG.md)
 
 ## Project Journey
 
@@ -70,7 +98,9 @@ continuous batching (work in progress, see Project Journey). Runs on an Apple-si
 - **Verified**: unit + state-machine tests (ref counts, LRU order, collision safety, hash ↔ block bijection);
   engine outputs identical with cache on/off on the fp32 tiny model, including forced evictions.
 - **Measured** (587-token shared system prompt, 32 requests): TTFT of cache hits **361.5 → 39.5 ms (9.2×)**;
-  batched throughput **48.6 → 151.0 tok/s (3.1×)**; 93% of prompt tokens served from cache.
+  batched throughput 48.6 → 151.0 tok/s (3.1×) at the time; on the final code (after the Stage 6 attention fix
+  made cache-off prefill faster) **63.1 → 153.5 tok/s (2.4×)**, hits 359.8 → 39.6 ms; 93% of prompt tokens served
+  from cache.
 - **Problems / fixes**: a test exposed that plain "least recently freed" eviction threw away cached blocks while
   empty blocks were free → empty blocks are now handed out first. In fp16, 29–31/32 greedy outputs match cache-off
   (different matmul shapes on a hit); exact in fp32.
@@ -122,6 +152,20 @@ continuous batching (work in progress, see Project Journey). Runs on an Apple-si
 - **Problems / fixes**: top-p at batch 32 was 56% slower than greedy because of a per-row CPU `multinomial` over
   the 152k vocabulary; inverse-CDF sampling on the device made sampled decoding 69% faster (235.8 → 398.5 tok/s).
 
+### 8. Ops polish
+- **Goal**: make it runnable and checkable by someone else.
+- **Decision & alternatives**: CPU Dockerfile with a uv-synced venv, non-root user, healthcheck; the model is
+  mounted (read-only HF cache), not baked in. Linux resolves torch from the PyTorch CPU index via
+  `[tool.uv.sources]`, so neither Docker nor CI pulls CUDA wheels. CI = ruff + ruff format + strict mypy + pytest
+  on CPU with the tiny random model; real-model tests skip themselves when the checkpoint is absent.
+- **Built**: `Dockerfile`, `.github/workflows/ci.yml`, `docs/ARCHITECTURE.md`, `docs/CAPACITY.md`.
+- **Verified**: image built and served a real chat completion under colima; every CI step run locally and green
+  (64 passed / 6 skipped without the model, 70 passed with it); full suite run 10× in a row.
+- **Measured**: reran Stage 3/4 benchmarks on the final code (continuous B=32 377.2 tok/s — unchanged; prefix
+  cache batched gain now 2.4×).
+- **Problems / fixes**: first Docker run could not find the model — the mount path assumed root but the image
+  runs as a non-root user; set `HF_HUB_CACHE=/models/hub` explicitly.
+
 ### Key metrics
 
 | metric | value | how measured | source |
@@ -132,20 +176,53 @@ continuous batching (work in progress, see Project Journey). Runs on an Apple-si
 | single-request decode, CPU fp32 | 18.6 ± 0.0 tok/s (n=3) | same | `results/stage1_single_request.json` |
 | KV slot utilization, paged bs=16 vs reserve prompt+max_tokens | 93.3% vs 53.7% (step avg, 64 real requests) | `benchmarks/bench_memory.py` | `results/stage2_memory.json` |
 | requests fitting in 2 GiB KV: paged vs naive max_model_len=2048 | 85 vs 9 | same | `results/stage2_memory.json` |
-| offline throughput, continuous vs static vs sequential (B=32, 48 req) | 377.3 vs 308.2 vs 41.4 tok/s (n=3, cv ≤ 0.9%) | `benchmarks/bench_batching.py` | `results/stage3_batching.json` |
+| offline throughput, continuous vs static vs sequential (B=32, 48 req), final code | 377.2 vs 305.7 vs 41.7 tok/s (n=3, cv ≤ 1.8%) | `benchmarks/bench_batching.py` | `results/stage3_batching.json` |
 | decode throughput at batch 32 / 64 | 517.8 / 670.4 tok/s | `benchmarks/bench_decode_batch.py` | `results/stage3_decode_batch.json` |
 | K/V gather fix (56 gathers, B=32) | 81.0 → 12.7 ms | `benchmarks/micro_gather.py` | `results/micro_gather.json` |
-| prefix cache: TTFT of hits, 614-token prompts | 361.5 → 39.5 ms (n=3, cv ≤ 0.5%) | `benchmarks/bench_prefix.py` | `results/stage4_prefix_cache.json` |
-| prefix cache: batched throughput (B=16) | 48.6 → 151.0 tok/s | same | `results/stage4_prefix_cache.json` |
+| prefix cache: TTFT of hits, 614-token prompts, final code | 359.8 → 39.6 ms (9.1×, n=3, cv ≤ 0.5%) | `benchmarks/bench_prefix.py` | `results/stage4_prefix_cache.json` |
+| prefix cache: batched throughput (B=16), final code | 63.1 → 153.5 tok/s (2.4×) | same | `results/stage4_prefix_cache.json` |
 | HTTP serving plateau, ember vs naive HF server | 201.4 vs 54.1 tok/s (3.7×), n=3 | `benchmarks/bench_serving.py` | `results/stage6_serving_{ember,hf}.json` |
 | ember saturation knee (open-loop, ~215-in/110-out tokens) | λ 2→3 req/s: TTFT p99 0.47 s → 15.5 s | same | `results/stage6_serving_ember.json` |
 | ember vs Ollama Q4_K_M peak / single-user TPOT | 201.4 vs 217.3 tok/s / 26 vs 9 ms | same | `results/stage6_serving_ollama.json` |
 | mixed prefill+decode step fix (1024 chunk + 31 decodes) | 4479.9 → 687.5 ms | `benchmarks/micro_mixed_step.py` | `results/micro_mixed_step.json` |
 | int8 W8A16: perplexity / weights / batch-1 decode | +0.13% / −37% / +20% (51.0 vs 42.4 tok/s) | `benchmarks/bench_quality.py` | `results/stage7_quality_speed.json` |
 | sampled (top-p) decode at B=32, before → after sampler fix | 235.8 → 398.5 tok/s | same | `results/stage7_quality_speed{_before_sampler_fix,}.json` |
+| test suite | 70 tests, 10/10 consecutive full runs green | `uv run pytest -q` ×10 | `results/stage8_test_10x.txt` |
 
 ### Next steps
-Ops polish (8).
+1. Cut per-step Python overhead (persistent metadata buffers, fewer host↔device syncs) — the main reason
+   single-stream TPOT trails HF `generate` and Ollama.
+2. A fused paged-attention kernel (Metal on MPS, or FlashInfer on CUDA) instead of gather + padded SDPA.
+3. Separate API-server and engine processes (ZMQ) to take HTTP/detokenization off the engine's GIL.
+4. Prompt-lookup speculative decoding (needs KV-slot rollback in the block manager).
+5. Benchmark on a real trace (ShareGPT) instead of the synthetic log-normal workload.
+
+## Design decisions & trade-offs
+
+| decision | why | cost / alternative |
+|---|---|---|
+| packed token layout `[T, H]` through the model | linear layers never see padding; prefill and decode share one forward | attention must regroup tokens per sequence |
+| `AttentionBackend` protocol | model code unchanged across no-cache / contiguous / paged caches | one indirection per layer |
+| paged KV with block size 16 | 93% slot utilization vs 54% for per-request reservation | gather + padding per layer without a fused kernel |
+| decode and prefill rows in separate attention groups | a 1024-token chunk no longer pads 31 decode rows (4479.9 → 687.5 ms) | two SDPA calls in mixed steps |
+| decode-first scheduling + chunked prefill | protects ITL of running requests | long prompts need several steps (TTFT) |
+| preempt newest, recompute (no swap) | unified memory: swapping to "host" frees nothing | recompute FLOPs on resume (prefix cache often hits) |
+| block-hash prefix cache, LRU = free list | no capacity cost; O(1) hit/evict | whole-block granularity only (radix tree would be finer) |
+| one engine thread + asyncio front end | engine needs no locks; event loop never blocks on GPU | shares the GIL with HTTP/detokenization |
+| per-request `torch.Generator` | seeded output independent of batch neighbours and preemption | per-row scalar draw on CPU |
+| fp16 (not bf16) on MPS | token-identical to fp32 reference on 8/8 prompts; bf16 only 3/8 | fp16 range (fine for this model) |
+| W8A16 int8 rather than speculative decoding | finishable and measurable: +0.13% ppl, +20% batch-1 decode | no gain at batch 32 |
+
+## Repository layout
+```
+ember/            engine: config, model, loader, tokenizer, attention (simple caches), paged_attention,
+                  block_manager, sequence, scheduler, model_runner, engine, sampling, quant, simple_generate
+ember/server/     protocol (pydantic), async_engine (engine thread bridge), api (FastAPI), metrics, __main__
+tests/            70 tests: tiny random model + generated tokenizer (CI) and real_model parity tests (local)
+benchmarks/       every benchmark + load generator + HF baseline server; data/ (prompts, system prompt)
+results/          raw JSON/logs for every number in the docs
+docs/             ARCHITECTURE.md, CAPACITY.md
+```
 
 ## How to run
 
@@ -168,10 +245,20 @@ uv run python -m benchmarks.bench_memory
 uv run python -m benchmarks.bench_decode_batch
 uv run python -m benchmarks.bench_batching
 uv run python -m benchmarks.bench_prefix
+uv run python -m benchmarks.bench_quality
+uv run python -m benchmarks.bench_serving --backend ember --port 8100 --rates 0.5,1,2,3,4,6 --concurrency 1,8,32
 ```
+Docker (CPU): `docker build -t ember:cpu . && docker run --rm -p 8100:8100 -v ~/.cache/huggingface:/models:ro ember:cpu`.
+CI locally: `uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest -q`.
 The real-model tests/benchmarks expect `Qwen/Qwen3-0.6B` in the local Hugging Face cache; nothing is downloaded.
 
-## Limitations
+## Limitations (honest list)
+- Everything was measured on one laptop (M2, MPS), over localhost, with another job sometimes using the CPU
+  (load recorded and gated at load1 ≤ 4, key runs repeated 3×). Absolute numbers will not transfer to a GPU server.
+- The serving workload is synthetic (log-normal lengths, random-token prompts), not a real trace.
+- Ollama comparison is not like-for-like (4-bit GGUF + llama.cpp Metal kernels vs fp16 eager PyTorch).
+- GitHub Actions CI has never run remotely (no remote); its steps were run locally.
+- No tensor/pipeline parallelism, multi-GPU, LoRA, beam search, n > 1, logprobs, or tool calling.
 - Only the Qwen3 dense architecture (no MoE, no rope scaling / sliding window).
 - Pure PyTorch eager; no custom kernels, no CUDA graphs. Batch-1 decode is launch-overhead bound.
 - Single-stream latency: per-step Python overhead (scheduler, metadata, engine-thread hand-off) makes ember's

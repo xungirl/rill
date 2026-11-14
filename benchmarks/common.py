@@ -64,7 +64,7 @@ def summarize(xs: list[float]) -> dict[str, float]:
         "stdev": statistics.stdev(xs) if len(xs) > 1 else 0.0,
         "min": min(xs),
         "max": max(xs),
-        "cv_pct": 100 * statistics.stdev(xs) / statistics.fmean(xs) if len(xs) > 1 else 0.0,
+        "cv_pct": 100 * statistics.stdev(xs) / statistics.fmean(xs) if len(xs) > 1 and any(xs) else 0.0,
     }
 
 

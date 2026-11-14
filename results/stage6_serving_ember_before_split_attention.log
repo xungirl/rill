@@ -1,0 +1,4 @@
+[ember rep0] rate  0.50:   62.6 tok/s 0.56 req/s  ttft p50/p99 0.20/0.41s  tpot p50 33ms  e2e p99 8.6s  err 0  load1 2.34
+[ember rep0] rate  1.00:  114.7 tok/s 1.09 req/s  ttft p50/p99 0.07/0.69s  tpot p50 38ms  e2e p99 10.7s  err 0  load1 2.04
+[ember rep0] rate  2.00:  127.6 tok/s 1.17 req/s  ttft p50/p99 0.26/16.19s  tpot p50 184ms  e2e p99 43.5s  err 0  load1 1.94
+[ember rep0] rate  3.00:  109.2 tok/s 1.02 req/s  ttft p50/p99 19.52/64.41s  tpot p50 278ms  e2e p99 88.9s  err 0  load1 1.79

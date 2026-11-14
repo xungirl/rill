@@ -69,19 +69,27 @@ def test_mixed_batches_match_full_forward(tiny_model: Qwen3Model, block_size: in
         torch.testing.assert_close(torch.stack(got[s.seq_id]), ref, atol=1e-5, rtol=1e-5)
 
 
-def test_metadata_mask_and_slots() -> None:
-    # seq0: 2 cached + 2 new tokens (chunk), seq1: 4 cached + 1 decode token; block_size 2
+def test_metadata_mask_slots_and_groups() -> None:
+    # seq0: 2 cached + 2 new tokens (prefill chunk); seq1: 4 cached + 1 decode token; block_size 2
     meta = PagedAttentionMetadata.build(
         block_tables=[[5, 3], [0, 1, 7]], query_lens=[2, 1], context_lens=[4, 5], block_size=2, device="cpu"
     )
     assert meta.slot_mapping.tolist() == [3 * 2 + 0, 3 * 2 + 1, 7 * 2 + 0]
-    assert meta.query_index.tolist() == [0, 1, 2]
-    m = meta.mask[:, 0]
-    assert m[0, 0].tolist() == [True, True, True, False, False, False]  # pos 2 sees 0..2
-    assert m[0, 1].tolist() == [True, True, True, True, False, False]  # pos 3 sees 0..3
-    assert m[1, 0].tolist() == [True] * 5 + [False]  # decode at pos 4 sees 0..4
-    assert m[1, 1].any()  # padding row is never fully masked (fully masked -> NaN)
-    assert meta.block_ids.tolist() == [5, 3, 0, 0, 1, 7]  # seq0 padded with block 0
+    decode, prefill = meta.groups  # decode rows and prefill rows are attended separately
+    assert decode.max_q == 1 and decode.token_index.tolist() == [2]
+    assert decode.block_ids.tolist() == [0, 1, 7]
+    assert decode.mask[0, 0, 0].tolist() == [True] * 5 + [False]  # decode at pos 4 sees 0..4
+    assert prefill.max_q == 2 and prefill.token_index.tolist() == [0, 1]
+    assert prefill.block_ids.tolist() == [5, 3]
+    assert prefill.mask[0, 0].tolist() == [[True, True, True, False], [True, True, True, True]]
+
+
+def test_padding_rows_never_fully_masked() -> None:
+    meta = PagedAttentionMetadata.build(
+        block_tables=[[0, 1], [2]], query_lens=[3, 2], context_lens=[3, 2], block_size=2, device="cpu"
+    )
+    (prefill,) = meta.groups
+    assert prefill.mask.any(dim=-1).all()  # a fully masked row would make softmax NaN
 
 
 def _paged_greedy(model: Qwen3Model, prompts: list[list[int]], max_tokens: int, block_size: int) -> list[list[int]]:

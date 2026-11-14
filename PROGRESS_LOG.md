@@ -23,3 +23,16 @@
   naive policy itself. Fixed by sizing to Σ(prompt + max_tokens).
 - Problem: I had added a "fully masked padding row → NaN" guard; working through the mask math showed a padding
   row always sees key 0, so the guard was dead code and was removed (test documents it).
+
+## 2026-11-14 — Stage 3: continuous batching
+- `Scheduler` (decode-first iteration-level scheduling, token budget, chunked prefill, FCFS admission,
+  preempt-newest with recompute, `policy="static"` baseline) and `LLMEngine` (schedule → execute → sample → update).
+- Tests: engine output == single-sequence reference for roomy / chunked (budget 7) / tight-memory (preempting) /
+  sequential / static configs on the tiny model; random-arrival invariant test; decode-before-prefill ordering;
+  static admits only when drained; abort frees blocks; real model fp32 CPU with preemption == reference.
+- Perf bug found by calibration: B=32 decode step 102 ms. Op-level timing showed 81 ms in K/V gathers;
+  micro-benchmark of 4 gather variants → block-level `index_select` (6.4× faster). Decode throughput at B=32
+  311.8 → 517.8 tok/s, B=64 366.3 → 670.4 tok/s (before/after JSON both kept).
+- Measured: continuous B=32 377.3 tok/s vs static 308.2 vs sequential 41.4 (48 requests, 3 repeats, cv ≤ 0.9%).
+- Caveat recorded: fp16 MPS outputs differ from the sequential run for 5–10 of 48 requests (batch-shape rounding).
+- Note: a few seconds of CPU-only unit tests overlapped the static-8 run (variance stayed < 1%).

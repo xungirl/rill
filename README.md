@@ -38,6 +38,25 @@ continuous batching (work in progress, see Project Journey). Runs on an Apple-si
 - **Problems / fixes**: the first memory benchmark OOM'd because I sized the pool with the naive formula
   (64 × 2048 slots = 14 GiB) — a nice demonstration of the problem itself; resized to Σ(prompt+max_tokens).
 
+### 3. Continuous batching
+- **Goal**: serve many requests at once without waiting for the slowest member of a batch.
+- **Decision & alternatives**: iteration-level scheduling (Orca / vLLM): every step re-decides who runs. Running
+  sequences are served first (decode = 1 token, unfinished prefill = next chunk), then waiting requests are
+  admitted FCFS under a per-step token budget (chunked prefill). Out of KV blocks → preempt the newest running
+  sequence and *recompute* it later rather than swap: on unified memory, swapping to "CPU memory" buys nothing.
+  Alternatives: prefill-first scheduling (better TTFT, worse ITL stalls); static batching (kept as a policy flag
+  so the baseline uses identical kernels).
+- **Built**: `ember/scheduler.py`, `ember/engine.py`.
+- **Verified**: on the tiny model, outputs equal single-sequence greedy for roomy, chunked (budget 7 tokens),
+  memory-tight (preempting), sequential and static configs; on the real model in fp32 with preemption too.
+- **Measured**: 48 requests with output lengths uniform[16,256]: continuous B=32 **377.3 tok/s** vs static B=32
+  308.2 vs sequential 41.4 (9.1×); p99 e2e 18.9 s vs 23.1 s vs 171.1 s. Decode-only throughput 517.8 tok/s at
+  B=32 and 670.4 at B=64.
+- **Problems / fixes**: first calibration showed 102 ms per decode step at B=32. Timing each op found 81 ms in
+  the K/V gather — MPS advanced indexing runs at ~7 GB/s. Block-level `index_select` is 6.4× faster
+  (micro-benchmark) → +66% throughput at B=32. Also: fp16 batching is not bit-batch-invariant (38–43/48 outputs
+  match the sequential run); fp32 is exact — documented rather than hidden.
+
 ### Key metrics
 
 | metric | value | how measured | source |
@@ -48,9 +67,12 @@ continuous batching (work in progress, see Project Journey). Runs on an Apple-si
 | single-request decode, CPU fp32 | 18.6 ± 0.0 tok/s (n=3) | same | `results/stage1_single_request.json` |
 | KV slot utilization, paged bs=16 vs reserve prompt+max_tokens | 93.3% vs 53.7% (step avg, 64 real requests) | `benchmarks/bench_memory.py` | `results/stage2_memory.json` |
 | requests fitting in 2 GiB KV: paged vs naive max_model_len=2048 | 85 vs 9 | same | `results/stage2_memory.json` |
+| offline throughput, continuous vs static vs sequential (B=32, 48 req) | 377.3 vs 308.2 vs 41.4 tok/s (n=3, cv ≤ 0.9%) | `benchmarks/bench_batching.py` | `results/stage3_batching.json` |
+| decode throughput at batch 32 / 64 | 517.8 / 670.4 tok/s | `benchmarks/bench_decode_batch.py` | `results/stage3_decode_batch.json` |
+| K/V gather fix (56 gathers, B=32) | 81.0 → 12.7 ms | `benchmarks/micro_gather.py` | `results/micro_gather.json` |
 
 ### Next steps
-Continuous batching (3) → prefix caching (4) → OpenAI-compatible server (5) →
+Prefix caching (4) → OpenAI-compatible server (5) →
 load testing (6) → sampling & int8 (7) → ops polish (8).
 
 ## How to run
@@ -60,6 +82,9 @@ uv sync                                  # Python 3.15, torch 2.15
 uv run pytest -q                         # unit tests (tiny random model) + real-model parity tests
 uv run python -m benchmarks.parity_report
 uv run python -m benchmarks.bench_single
+uv run python -m benchmarks.bench_memory
+uv run python -m benchmarks.bench_decode_batch
+uv run python -m benchmarks.bench_batching
 ```
 The real-model tests/benchmarks expect `Qwen/Qwen3-0.6B` in the local Hugging Face cache; nothing is downloaded.
 
@@ -68,3 +93,5 @@ The real-model tests/benchmarks expect `Qwen/Qwen3-0.6B` in the local Hugging Fa
 - Pure PyTorch eager; no custom kernels, no CUDA graphs. Batch-1 decode is launch-overhead bound.
 - Paged attention gathers each sequence's K/V into a padded tensor every layer (no fused paged-attention kernel
   on MPS): extra memory traffic proportional to batch × longest context.
+- fp16 results depend slightly on batch composition (not batch-invariant); greedy outputs can differ from a
+  sequential run at near-tie tokens. fp32 is exact.

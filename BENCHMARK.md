@@ -62,3 +62,52 @@ fit if all are at their final length at once. The naive policies must reserve up
 been written, so its waste is the unfilled tail of the last block (< block_size tokens per sequence) and there is
 no external fragmentation. Smaller blocks waste less but mean longer block tables and more gather indices; 16 is
 the default (as in vLLM).
+
+## Stage 3 — continuous batching
+
+### Decode throughput vs batch size, and the gather fix
+Command: `uv run python -m benchmarks.bench_decode_batch [--tag ...]` → `results/stage3_decode_batch.json`
+(and `results/stage3_decode_batch_before_gather_fix.json`, same script run on the previous commit's
+`paged_attention.py`). B identical 21-token prompts, 128 forced tokens each, all decoding in lock-step; 3 runs per B.
+
+| batch | tok/s before fix | tok/s after fix | ms/step after |
+|---|---|---|---|
+| 1 | 39.5 | 42.6 | 23.5 |
+| 4 | 114.7 | 137.4 | 29.1 |
+| 8 | 183.3 | 246.2 | 32.5 |
+| 16 | 232.2 | 335.4 | 47.7 |
+| 32 | 311.8 | **517.8** | 61.8 |
+| 64 | 366.3 | **670.4** | 95.5 |
+
+The fix: `results/micro_gather.json` (`uv run python -m benchmarks.micro_gather`) — 56 K/V gathers of a batch-32
+decode step take 81.0 ms with advanced indexing `pool[slot_ids]` vs 12.7 ms with block-level `index_select`
+(bitwise-identical results). Batch-1 paged decode (42.6 tok/s) is ~7% below the contiguous-cache path of Stage 1
+(45.9 tok/s): the price of metadata building and the gather.
+
+### Sequential vs static vs continuous batching (offline)
+Command: `uv run python -m benchmarks.bench_batching` → `results/stage3_batching.json` (3 repeats per mode,
+load1 at start 1.4–2.5). Workload: 48 chat prompts (1,041 prompt tokens total), output lengths uniform[16, 256]
+(seed 0) forced with `ignore_eos` → exactly 7,126 output tokens in every mode; all requests submitted at t=0;
+token budget 2,048/step; MPS fp16. TTFT and e2e are measured from t=0, so they include queueing.
+
+| mode | output tok/s (mean, cv) | req/s | TTFT p50 | e2e p50 | e2e p99 | mean TPOT | preemptions |
+|---|---|---|---|---|---|---|---|
+| sequential (1 at a time) | 41.4 (0.9%) | 0.28 | 84.71 s | 87.8 s | 171.06 s | 24.0 ms | 0 |
+| static, B=8 | 157.9 (0.6%) | 1.06 | 18.93 s | 23.2 s | 44.98 s | 31.1 ms | 0 |
+| continuous, B=8 | 219.6 (0.8%) | 1.48 | 13.30 s | 17.4 s | 32.39 s | 34.9 ms | 0 |
+| static, B=16 | 239.8 (0.8%) | 1.61 | 10.33 s | 17.3 s | 29.72 s | 43.2 ms | 0 |
+| continuous, B=16 | 273.4 (0.4%) | 1.84 | 6.97 s | 14.4 s | 26.00 s | 51.3 ms | 0 |
+| static, B=32 | 308.2 (0.6%) | 2.08 | 0.40 s | 12.3 s | 23.12 s | 51.5 ms | 0 |
+| **continuous, B=32** | **377.3 (0.0%)** | **2.54** | 0.40 s | 11.3 s | 18.87 s | 62.3 ms | 0 |
+| continuous, B=32, KV pool 160 blocks | 278.6 (0.4%) | 1.88 | 0.39 s | 15.4 s | 25.45 s | 69.3 ms | 34 |
+
+- Continuous vs static at the same concurrency: +39% (B=8), +14% (B=16), +22% (B=32) throughput, lower p99 e2e.
+  Static batches idle the slots of finished short requests until the longest one ends.
+- Continuous B=32 vs sequential: 9.1× throughput. TPOT rises with batch size (24 → 62 ms): the
+  throughput/latency trade-off.
+- With a deliberately tiny KV pool (2,560 token slots) the scheduler preempted 34 times and still finished every
+  request, at −26% throughput vs the 2 GiB pool.
+- **Batch invariance (honest caveat)**: on MPS fp16, 38–43 of 48 outputs are token-identical to the sequential
+  run (identical across repeats of the same mode). Changing batch composition changes the fp16 matmul/SDPA shapes
+  and hence rounding, which flips near-tie argmaxes. In fp32 on CPU, continuous batching with chunked prefill and
+  preemption reproduces single-sequence greedy exactly (`tests/test_scheduler.py::test_real_model_continuous_batching_matches_reference_fp32`).

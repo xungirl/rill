@@ -128,3 +128,52 @@
    A：我们只共享**已经写满**的块（前缀缓存按满块哈希），满块之后不会再被写；新 token 总是写进序列自己的新块。只有共享未满的块（比如 beam search 从中间分叉）才需要 CoW。
 8. **Q：KV 池大小怎么定？**
    A：`num_blocks = 预算字节 / (kv_bytes_per_token × block_size)`（`PagedKVCache.num_blocks_for_budget`）。2 GiB fp16 → 18,724 token → 1,170 块。我第一次压测按 64×2048 预留直接 OOM（14 GiB），正好说明了 naive 的问题。
+
+---
+
+## Stage 3 — 连续批处理调度器（Continuous batching scheduler）
+
+### 读代码顺序
+`ember/scheduler.py` → `ember/engine.py` → `tests/test_scheduler.py` → `benchmarks/micro_gather.py` → `benchmarks/bench_decode_batch.py` → `benchmarks/bench_batching.py`
+
+### 1. `ember/scheduler.py`（核心）
+**(a) 骨架**：`SchedulerConfig`（`max_num_seqs` 并发上限、`max_num_batched_tokens` 每步 token 预算、`chunked_prefill`、`policy`）；`Scheduler` 持有 `waiting`（deque）和 `running`（list）两个队列；`schedule()` 每步从零决定这一步跑谁、每个跑几个 token，分两段：① 先排 running（decode 1 个 token，或未完成 prefill 的下一块）② 剩余预算按 FCFS 接纳 waiting。`_preempt()` 抢占；`finish()` 结束并释放块。
+**(b) 为什么**：
+- **迭代级调度（iteration-level scheduling）**：每生成一个 token 就重新调度一次，序列一结束马上空出位置给新请求，不用等整批最长的那个——这就是「连续」批处理（Orca 论文的思想）。静态批处理（static batching）要等最长的序列跑完，短序列结束后它的槽位一直空着。
+- **decode 优先**：running 先排，保证已经在出字的请求的 inter-token latency（ITL）稳定；新 prompt 用剩余预算。
+- **token 预算 + 分块 prefill**：一个 2000 token 的 prompt 如果一步算完，这一步所有人的 decode 都要等它；切成块后每步最多 `max_num_batched_tokens` 个 token，把卡顿摊开。代价是长 prompt 的 TTFT 会变长一点。
+- **抢占选最新到达的**：先来先服务的公平性；被抢占的放回 waiting **队首**，优先恢复。
+- **重算（recompute）而不是换出（swap）**：vLLM 支持把 KV 换到 CPU 内存。在统一内存的 Mac 上「换到 CPU」没有意义（同一块物理内存），而 prefill 是计算密集、很快的，所以重算更简单划算。把 `num_computed_tokens` 归零，下次把 prompt+已生成的 token 当成新 prompt 重新 prefill。
+- **抢占的那一步不接纳新请求**：内存已经紧张，再接纳只会抖动（thrashing）。
+- `policy="static"` 用同一套代码做出静态批处理基线，保证对比只差调度策略（同样的 kernel、同样的模型）。
+**(c) 语法**：`deque.appendleft` 放回队首；`@dataclass(frozen=True)` + `__post_init__` 做参数校验。
+
+### 2. `ember/engine.py`
+**(a) 骨架**：`LLMEngine.step()` = `schedule()` → `runner.execute()` → `sample()` → 更新每个序列（`num_computed_tokens += n`，需要的话 append 新 token、判断停止条件、`finish` 释放）。`add_request` / `abort` / `generate`（离线批量接口）。
+**(b) 为什么**：引擎是**同步、单线程**的，不知道 HTTP 的存在；Stage 5 的服务器在一个单独线程里循环调用 `step()`。这样引擎可以独立测试，也不会被 asyncio 事件循环卡住（GPU 前向是阻塞调用）。
+**(c) 语法**：`itertools.count()` 生成自增 id；`iter()` + `next()` 按顺序消费采样结果。
+
+### 3. 性能排查：`benchmarks/micro_gather.py`
+第一次跑批处理时 B=32 每步 102 ms，远高于计算量的预期。逐项计时发现 81 ms 花在 K/V gather 上：MPS 上高级索引 `pool[slot_ids]`（2D 索引张量）只有约 7 GB/s。换成在 `[num_blocks, bs*kv*d]` 视图上按**块**做 `index_select`，同样的拷贝从 81 ms 降到 12.7 ms（约 6.4 倍）；B=32 decode 吞吐 311.8 → 517.8 tok/s。
+
+### Stage 3 实测（`results/stage3_batching.json`，48 请求、输出长度 U[16,256]、3 次重复）
+continuous B=32 **377.3 tok/s**，static B=32 308.2，sequential 41.4（9.1 倍）；p99 e2e 18.9 s / 23.1 s / 171.1 s；TPOT 随 batch 从 24 ms 涨到 62 ms。KV 池只给 160 块时抢占 34 次，全部完成，吞吐降 26%。
+fp16 下 38–43/48 个输出和顺序执行逐 token 相同（batch 形状改变浮点舍入）；fp32 完全相同。
+
+### Stage 3 面试题
+1. **Q：continuous batching 和 static batching 的本质区别？什么时候差距最大？**
+   A：调度粒度——static 以「请求批」为单位，continuous 以「一次迭代（一个 token）」为单位。输出长度方差越大差距越大：static 批里短请求结束后槽位空转直到最长请求结束。
+2. **Q：吞吐（throughput）和延迟（TTFT/TPOT）怎么权衡？**
+   A：批越大，每步服务的序列越多，吞吐上升；但每步更慢，TPOT 变大；排队的请求要等槽位，TTFT 变大。`max_num_seqs` 和 `max_num_batched_tokens` 就是这个旋钮。
+3. **Q：为什么 decode 优先而不是 prefill 优先？**
+   A：prefill 优先（老版 vLLM）能更快接纳新请求、TTFT 好，但 prefill 步会让所有正在 decode 的请求停顿，ITL 抖动。decode 优先 + 分块 prefill 让 decode 每步都有份，prefill 用剩余预算。
+4. **Q：KV 块用完了怎么办？**
+   A：抢占最近到达的 running 序列：释放它的全部块，`num_computed_tokens=0`，放回 waiting 队首，之后重算。代码 `Scheduler._preempt`；测试 `tight_memory` 场景断言发生了抢占且输出与参考逐 token 相同。
+5. **Q：重算和换出（swap）怎么选？**
+   A：swap 需要 CPU 内存和 PCIe 带宽，适合 prompt 很长、重算很贵的情况；重算只花 FLOPs，prefill 是计算密集，在 GPU 上很快。M 系列芯片 CPU/GPU 共享内存，swap 没有意义。
+6. **Q：分块 prefill 的块大小（token 预算）怎么选？**
+   A：太大：长 prompt 一步占满，其他请求的 ITL 尖峰；太小：prefill 拆成很多步，每步固定开销（kernel launch、权重读取）被重复支付，TTFT 变长、吞吐下降。
+7. **Q：为什么批处理能提升吞吐？瓶颈在哪？**
+   A：decode 时每步都要读一遍全部权重（~1.2 GB），batch=1 时这次读取只服务 1 个 token；batch=B 时服务 B 个，权重读取和 kernel launch 开销被摊薄。实测见 BENCHMARK.md 的 decode 吞吐 vs batch。批再大以后，注意力的 K/V 读取（随 batch × 上下文增长）和 logits 投影成为主要开销。
+8. **Q：你怎么发现并解决性能瓶颈的？**
+   A：先算理论值（计算量/访存量），发现实测离谱 → 逐个算子计时（`torch.mps.synchronize()` 保证计时准确）→ 定位到 gather 占 2/3 → 写微基准比较 4 种 gather 实现（结果逐位相同）→ 换成 block 级 `index_select`。有前后对比数据（`results/stage3_decode_batch_before_gather_fix.json` vs `results/stage3_decode_batch.json`）。

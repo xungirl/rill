@@ -8,13 +8,13 @@ from collections import OrderedDict
 import pytest
 import torch
 
-from ember.attention import NoCacheAttention
-from ember.block_manager import BlockManager
-from ember.model import Qwen3Model
-from ember.model_runner import ModelRunner, ScheduledSeq
-from ember.paged_attention import PagedAttentionMetadata, PagedKVCache
-from ember.sampling import SamplingParams
-from ember.sequence import Sequence
+from rill.attention import NoCacheAttention
+from rill.block_manager import BlockManager
+from rill.model import Qwen3Model
+from rill.model_runner import ModelRunner, ScheduledSeq
+from rill.paged_attention import PagedAttentionMetadata, PagedKVCache
+from rill.sampling import SamplingParams
+from rill.sequence import Sequence
 
 
 def reference_logits(model: Qwen3Model, ids: list[int]) -> torch.Tensor:
@@ -114,9 +114,9 @@ def _paged_greedy(model: Qwen3Model, prompts: list[list[int]], max_tokens: int, 
 @pytest.mark.real_model
 @torch.no_grad()
 def test_real_model_paged_batch_equals_contiguous_greedy() -> None:
-    from ember.loader import load_model, resolve_model_dir
-    from ember.simple_generate import generate_greedy
-    from ember.tokenizer import Tokenizer
+    from rill.loader import load_model, resolve_model_dir
+    from rill.simple_generate import generate_greedy
+    from rill.tokenizer import Tokenizer
 
     tok = Tokenizer(resolve_model_dir())
     model = load_model(device="cpu", dtype=torch.float32)

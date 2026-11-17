@@ -1,7 +1,7 @@
 """Stage 6 orchestrator: start a server, sweep open-loop arrival rates (+ closed loop), stop it.
 
 Backends (all on localhost, same machine):
-  ember   uv run python -m ember.server        (this project, MPS fp16)
+  rill   uv run python -m rill.server        (this project, MPS fp16)
   hf      uv run python -m benchmarks.hf_server (transformers.generate, one request at a time)
   ollama  an already-running `ollama serve` (llama.cpp Metal backend, GGUF weights)
 
@@ -9,7 +9,7 @@ For each repeat and each rate, a fresh seeded workload from benchmarks/loadgen.p
 sent; the number of requests per point is max(min_requests, rate * seconds_per_point)
 so low rates do not take forever and high rates still reach steady state.
 
-Run: uv run python -m benchmarks.bench_serving --backend ember --rates 0.5,1,2,3,4,6 --repeats 3
+Run: uv run python -m benchmarks.bench_serving --backend rill --rates 0.5,1,2,3,4,6 --repeats 3
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from benchmarks.common import load1, wait_for_quiet, write_result
 from benchmarks.loadgen import closed_loop, make_workload, open_loop, summarize_run
 
 SERVERS = {
-    "ember": [sys.executable, "-m", "ember.server", "--port", "{port}"],
+    "rill": [sys.executable, "-m", "rill.server", "--port", "{port}"],
     "hf": [sys.executable, "-m", "benchmarks.hf_server", "--port", "{port}"],
 }
 
@@ -47,7 +47,7 @@ def wait_ready(url: str, path: str, timeout_s: float = 300) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--backend", choices=["ember", "hf", "ollama"], required=True)
+    ap.add_argument("--backend", choices=["rill", "hf", "ollama"], required=True)
     ap.add_argument("--rates", default="0.5,1,2,3,4,6")
     ap.add_argument("--concurrency", default="")
     ap.add_argument("--repeats", type=int, default=3)
@@ -55,7 +55,7 @@ def main() -> None:
     ap.add_argument("--seconds-per-point", type=float, default=40)
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--model", default=None)
-    ap.add_argument("--server-args", default="", help="extra args for the ember server")
+    ap.add_argument("--server-args", default="", help="extra args for the rill server")
     ap.add_argument("--tag", default=None)
     args = ap.parse_args()
     port = 11434 if args.backend == "ollama" else args.port
@@ -69,7 +69,7 @@ def main() -> None:
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         wait_ready(
-            url, "/api/tags" if args.backend == "ollama" else ("/health" if args.backend == "ember" else "/docs")
+            url, "/api/tags" if args.backend == "ollama" else ("/health" if args.backend == "rill" else "/docs")
         )
         warm = make_workload(4, seed=999)
         asyncio.run(open_loop(url, model, warm, 100.0, 999))  # warmup: compile shaders, load model

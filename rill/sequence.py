@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 
 import torch
 
-from ember.sampling import SamplingParams
+from rill.sampling import SamplingParams
 
 
 class SequenceStatus(enum.Enum):

@@ -19,8 +19,8 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from ember.attention import AttentionBackend
-from ember.config import ModelConfig
+from rill.attention import AttentionBackend
+from rill.config import ModelConfig
 
 
 class RMSNorm(nn.Module):

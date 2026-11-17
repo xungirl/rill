@@ -11,12 +11,12 @@ from hypothesis import settings
 from hypothesis import strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, initialize, invariant, precondition, rule
 
-from ember.block_manager import BlockManager
-from ember.engine import EngineConfig, LLMEngine
-from ember.model import Qwen3Model
-from ember.sampling import SamplingParams
-from ember.scheduler import SchedulerConfig
-from ember.sequence import Sequence
+from rill.block_manager import BlockManager
+from rill.engine import EngineConfig, LLMEngine
+from rill.model import Qwen3Model
+from rill.sampling import SamplingParams
+from rill.scheduler import SchedulerConfig
+from rill.sequence import Sequence
 
 BS = 4
 

@@ -17,7 +17,7 @@ from __future__ import annotations
 import torch
 from torch import Tensor, nn
 
-from ember.model import Qwen3Model
+from rill.model import Qwen3Model
 
 
 class Int8Linear(nn.Module):

@@ -38,10 +38,10 @@
   <rect width="1600" height="1000" fill="url(#vignette)"/>
 
   <!-- header -->
-  <text x="60" y="52" class="m xs" style="fill:#0891B2;letter-spacing:3px">EMBER · 02 / RESULTS</text>
+  <text x="60" y="52" class="m xs" style="fill:#0891B2;letter-spacing:3px">RILL · 02 / RESULTS</text>
   <text x="60" y="94" class="t" font-size="36" font-weight="800">Measured on one Apple M2: what each idea bought</text>
   <text x="60" y="126" class="m s">Qwen3-0.6B · fp16 MPS unless noted · n=3 runs · raw output in results/ · bars drawn to scale</text>
-  <text x="1540" y="52" class="m xs" text-anchor="end">github.com/xungirl/ember</text>
+  <text x="1540" y="52" class="m xs" text-anchor="end">github.com/xungirl/rill</text>
 
   <!-- A: offline throughput -->
   <rect x="60" y="160" width="740" height="310" rx="14" class="panel"/>
@@ -78,7 +78,7 @@
     </pattern>
   </defs>
   <g class="m s">
-    <text x="854" y="272" style="fill:#111827">ember</text>
+    <text x="854" y="272" style="fill:#111827">rill</text>
     <rect x="1010" y="254" width="369" height="28" rx="5" fill="#0891B2"/>
     <text x="1388" y="273" class="t" font-size="18" font-weight="800" style="fill:#0891B2">201.4</text>
     <text x="854" y="330" style="fill:#111827">naive HF server</text>
@@ -170,5 +170,5 @@
   <!-- caveats -->
   <rect x="60" y="904" width="1480" height="72" rx="12" fill="#FDF2F2" stroke="#F3C4C4"/>
   <text x="84" y="932" class="m xs" style="fill:#DC2626;letter-spacing:2px">HONEST CAVEATS</text>
-  <text x="84" y="958" class="m s" style="fill:#374151">single-stream TPOT 26 ms vs HF generate 17 ms vs Ollama 9 ms (ember wins only under load) · synthetic load, one laptop · fp16 batching: 38–43/48 outputs = sequential</text>
+  <text x="84" y="958" class="m s" style="fill:#374151">single-stream TPOT 26 ms vs HF generate 17 ms vs Ollama 9 ms (rill wins only under load) · synthetic load, one laptop · fp16 batching: 38–43/48 outputs = sequential</text>
 </svg>

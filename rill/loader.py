@@ -14,8 +14,8 @@ from pathlib import Path
 import torch
 from safetensors import safe_open
 
-from ember.config import ModelConfig
-from ember.model import Qwen3Model, RotaryEmbedding
+from rill.config import ModelConfig
+from rill.model import Qwen3Model, RotaryEmbedding
 
 DEFAULT_MODEL = "Qwen/Qwen3-0.6B"
 

@@ -16,10 +16,10 @@ import time
 import torch
 
 from benchmarks.common import load1, summarize, sync, wait_for_quiet, write_result
-from ember.attention import ContiguousKVCache
-from ember.loader import load_model, resolve_model_dir
-from ember.model import Qwen3Model
-from ember.tokenizer import Tokenizer
+from rill.attention import ContiguousKVCache
+from rill.loader import load_model, resolve_model_dir
+from rill.model import Qwen3Model
+from rill.tokenizer import Tokenizer
 
 PROMPT = "Write a short story about a lighthouse keeper who discovers a message in a bottle."
 CONFIGS = [("mps", torch.bfloat16), ("mps", torch.float16), ("cpu", torch.bfloat16), ("cpu", torch.float32)]

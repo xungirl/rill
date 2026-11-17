@@ -9,9 +9,9 @@ from hypothesis import settings
 from hypothesis import strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, initialize, invariant, precondition, rule
 
-from ember.block_manager import BlockManager, NoFreeBlocksError
-from ember.sampling import SamplingParams
-from ember.sequence import Sequence
+from rill.block_manager import BlockManager, NoFreeBlocksError
+from rill.sampling import SamplingParams
+from rill.sequence import Sequence
 
 
 def make_seq(seq_id: int, n: int) -> Sequence:

@@ -30,9 +30,9 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass, field
 
-from ember.block_manager import BlockManager
-from ember.model_runner import ScheduledSeq
-from ember.sequence import Sequence, SequenceStatus
+from rill.block_manager import BlockManager
+from rill.model_runner import ScheduledSeq
+from rill.sequence import Sequence, SequenceStatus
 
 
 @dataclass(frozen=True)

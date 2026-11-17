@@ -9,10 +9,10 @@ import torch
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from ember.engine import EngineConfig, LLMEngine
-from ember.model import Qwen3Model
-from ember.sampling import SamplingParams, apply_top_k_top_p, sample
-from ember.scheduler import SchedulerConfig
+from rill.engine import EngineConfig, LLMEngine
+from rill.model import Qwen3Model
+from rill.sampling import SamplingParams, apply_top_k_top_p, sample
+from rill.scheduler import SchedulerConfig
 
 
 def reference_keep_set(logits: list[float], top_k: int, top_p: float) -> set[int]:

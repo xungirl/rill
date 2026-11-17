@@ -38,8 +38,8 @@ from typing import Any
 import httpx
 
 from benchmarks.common import load1, percentile, write_result
-from ember.loader import resolve_model_dir
-from ember.tokenizer import Tokenizer
+from rill.loader import resolve_model_dir
+from rill.tokenizer import Tokenizer
 
 
 @dataclass

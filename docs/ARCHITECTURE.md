@@ -1,4 +1,4 @@
-# ember architecture
+# rill architecture
 
 ## Layers
 
@@ -7,35 +7,35 @@
         │  POST /v1/completions, /v1/chat/completions (JSON or SSE)
         ▼
 ┌───────────────────────────── asyncio event loop (uvicorn) ─────────────────────────────┐
-│ ember/server/api.py        FastAPI routes, SSE framing, error mapping (400/422/429/504)  │
-│ ember/server/async_engine  generate(): tokenize → inbox.put(add) → await own queue       │
+│ rill/server/api.py        FastAPI routes, SSE framing, error mapping (400/422/429/504)  │
+│ rill/server/async_engine  generate(): tokenize → inbox.put(add) → await own queue       │
 │                            → incremental detokenize → stop strings → yield deltas       │
 │                            finally: abort on disconnect / timeout / stop string          │
-│ ember/server/metrics.py    Prometheus histograms + gauges   GET /metrics                 │
+│ rill/server/metrics.py    Prometheus histograms + gauges   GET /metrics                 │
 └───────────────────────────────┬───────────────────────────────▲─────────────────────────┘
           queue.Queue (thread-safe) │ ("add"|"abort", stream)      │ loop.call_soon_threadsafe
                                     ▼                              │ (StepOutput per token)
 ┌────────────────────────────── engine thread (only owner of the engine) ─────────────────┐
-│ ember/engine.py  LLMEngine.step():                                                       │
+│ rill/engine.py  LLMEngine.step():                                                       │
 │    1. Scheduler.schedule()        who runs, how many tokens each (token budget)          │
 │    2. ModelRunner.execute()       one packed forward over all scheduled tokens           │
 │    3. sample()                    greedy / temperature / top-k / top-p, per-seq RNG       │
 │    4. update                      num_computed += n, append token, cache full blocks,     │
 │                                   stop on EOS / max_tokens, free blocks                  │
-│ ember/scheduler.py     waiting deque, running list, decode-first, chunked prefill,       │
+│ rill/scheduler.py     waiting deque, running list, decode-first, chunked prefill,       │
 │                        preempt-newest + recompute, static policy for baselines           │
-│ ember/block_manager.py block pool, free list (OrderedDict = LRU), block tables,          │
+│ rill/block_manager.py block pool, free list (OrderedDict = LRU), block tables,          │
 │                        ref counts, chained block hashes for prefix caching               │
 └───────────────────────────────┬──────────────────────────────────────────────────────────┘
                                 ▼
 ┌────────────────────────────── model (MPS / CPU) ────────────────────────────────────────┐
-│ ember/model_runner.py   input_ids/positions for the packed batch + PagedAttentionMetadata│
-│ ember/model.py          Qwen3: embed → 28 × [RMSNorm → GQA attn (q/k norm, RoPE) → +     │
+│ rill/model_runner.py   input_ids/positions for the packed batch + PagedAttentionMetadata│
+│ rill/model.py          Qwen3: embed → 28 × [RMSNorm → GQA attn (q/k norm, RoPE) → +     │
 │                         RMSNorm → SwiGLU → +] → RMSNorm → tied LM head (last rows only)  │
-│ ember/paged_attention   per layer: index_copy_ new K/V into slots; index_select blocks;  │
+│ rill/paged_attention   per layer: index_copy_ new K/V into slots; index_select blocks;  │
 │                         padded batched SDPA with causal+length mask                      │
-│ ember/quant.py          optional W8A16 Int8Linear (torch._weight_int8pack_mm)            │
-│ ember/loader.py         safetensors → fused qkv / gate_up, meta-device init              │
+│ rill/quant.py          optional W8A16 Int8Linear (torch._weight_int8pack_mm)            │
+│ rill/loader.py         safetensors → fused qkv / gate_up, meta-device init              │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

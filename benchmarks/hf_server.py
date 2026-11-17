@@ -3,7 +3,7 @@
 What a quick prototype would do: one global model, an asyncio.Lock so requests
 run one at a time (generate() has no request-level batching), streaming via
 TextIteratorStreamer from a worker thread. Same model weights and dtype as
-ember (Qwen3-0.6B, fp16, MPS). Only /v1/completions with streaming, greedy.
+rill (Qwen3-0.6B, fp16, MPS). Only /v1/completions with streaming, greedy.
 
 Run: uv run python -m benchmarks.hf_server --port 8001
 """
@@ -23,8 +23,8 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from transformers import AutoModelForCausalLM, AutoTokenizer, TextIteratorStreamer
 
-from ember.loader import resolve_model_dir
-from ember.server.protocol import CompletionRequest, new_id, now
+from rill.loader import resolve_model_dir
+from rill.server.protocol import CompletionRequest, new_id, now
 
 
 def create_app(device: str) -> FastAPI:

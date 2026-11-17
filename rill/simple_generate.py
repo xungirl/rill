@@ -2,7 +2,7 @@
 
 This is the simplest correct decoding loop: one prefill forward over the whole
 prompt, then one forward per generated token, each reusing the cached K/V of
-all previous tokens. The batched engine (ember/engine.py) must produce exactly
+all previous tokens. The batched engine (rill/engine.py) must produce exactly
 the same tokens; tests compare against this function.
 """
 
@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import torch
 
-from ember.attention import ContiguousKVCache
-from ember.model import Qwen3Model
+from rill.attention import ContiguousKVCache
+from rill.model import Qwen3Model
 
 
 @torch.inference_mode()

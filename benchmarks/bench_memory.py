@@ -22,14 +22,14 @@ from pathlib import Path
 import torch
 
 from benchmarks.common import load1, write_result
-from ember.block_manager import BlockManager
-from ember.config import ModelConfig
-from ember.loader import load_model, resolve_model_dir
-from ember.model_runner import ModelRunner, ScheduledSeq
-from ember.paged_attention import PagedKVCache
-from ember.sampling import SamplingParams, sample
-from ember.sequence import Sequence
-from ember.tokenizer import Tokenizer
+from rill.block_manager import BlockManager
+from rill.config import ModelConfig
+from rill.loader import load_model, resolve_model_dir
+from rill.model_runner import ModelRunner, ScheduledSeq
+from rill.paged_attention import PagedKVCache
+from rill.sampling import SamplingParams, sample
+from rill.sequence import Sequence
+from rill.tokenizer import Tokenizer
 
 PROMPTS = Path(__file__).parent / "data" / "prompts.txt"
 MAX_TOKENS = 256

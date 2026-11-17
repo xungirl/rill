@@ -12,11 +12,11 @@ from typing import Any
 import pytest
 import torch
 
-from ember.attention import NoCacheAttention
-from ember.loader import load_model, resolve_model_dir
-from ember.model import Qwen3Model
-from ember.simple_generate import generate_greedy
-from ember.tokenizer import Tokenizer
+from rill.attention import NoCacheAttention
+from rill.loader import load_model, resolve_model_dir
+from rill.model import Qwen3Model
+from rill.simple_generate import generate_greedy
+from rill.tokenizer import Tokenizer
 
 pytestmark = pytest.mark.real_model
 

@@ -15,8 +15,8 @@ from typing import Any
 import torch
 
 from benchmarks.common import load1, summarize, write_result
-from ember.loader import load_model
-from ember.paged_attention import PagedAttention, PagedAttentionMetadata, PagedKVCache, _build_group
+from rill.loader import load_model
+from rill.paged_attention import PagedAttention, PagedAttentionMetadata, PagedKVCache, _build_group
 
 BS = 16
 N_DECODE = 31

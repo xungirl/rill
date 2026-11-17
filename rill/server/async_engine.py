@@ -30,12 +30,12 @@ import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 
-from ember.engine import LLMEngine, StepOutput
-from ember.sampling import SamplingParams
-from ember.server.metrics import Metrics
-from ember.tokenizer import IncrementalDetokenizer, Tokenizer
+from rill.engine import LLMEngine, StepOutput
+from rill.sampling import SamplingParams
+from rill.server.metrics import Metrics
+from rill.tokenizer import IncrementalDetokenizer, Tokenizer
 
-log = logging.getLogger("ember.request")
+log = logging.getLogger("rill.request")
 
 
 class QueueFullError(RuntimeError):
@@ -109,7 +109,7 @@ class AsyncLLMEngine:
     # ------------------------------------------------------------ lifecycle
     def start(self) -> None:
         self._running = True
-        self._thread = threading.Thread(target=self._loop, name="ember-engine", daemon=True)
+        self._thread = threading.Thread(target=self._loop, name="rill-engine", daemon=True)
         self._thread.start()
 
     def shutdown(self) -> None:
@@ -128,7 +128,7 @@ class AsyncLLMEngine:
                 outputs = self.engine.step()
                 self.metrics.step_time.observe(time.perf_counter() - t)
             except Exception as e:  # pragma: no cover - defensive: fail every request, stop serving
-                logging.getLogger("ember").exception("engine step failed")
+                logging.getLogger("rill").exception("engine step failed")
                 self.dead = e
                 for s in self._by_seq.values():
                     s.push(EngineDeadError(str(e)))

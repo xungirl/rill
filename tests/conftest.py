@@ -10,9 +10,9 @@ from __future__ import annotations
 import pytest
 import torch
 
-from ember.config import ModelConfig, tiny_config
-from ember.loader import random_model, resolve_model_dir
-from ember.model import Qwen3Model
+from rill.config import ModelConfig, tiny_config
+from rill.loader import random_model, resolve_model_dir
+from rill.model import Qwen3Model
 
 
 def _real_model_available() -> bool:

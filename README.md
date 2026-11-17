@@ -1,4 +1,8 @@
-# ember
+# Rill
+
+**Small engine. Steady flow.**
+
+> *A rill is a small stream: a light engine that keeps many requests flowing. Formerly named `ember`; raw logs in `results/` keep the old name.*
 
 A from-scratch LLM inference engine and OpenAI-compatible serving stack for **Qwen3-0.6B**, in plain PyTorch:
 own model code (no `transformers` in the engine), a **paged KV cache** with ref-counted blocks and **prefix
@@ -48,7 +52,7 @@ Hand-written SVG sources sit next to the PNGs; `docs/diagrams/render.sh` re-rend
   mix sequences without padding. Attention goes through an `AttentionBackend` protocol so the KV-cache layout can
   change later without touching the model. Alternative was wrapping HF modules — rejected: it hides exactly the
   parts an inference engine must control. q/k/v and gate/up matrices are fused at load time (fewer kernels).
-- **Built**: `ember/model.py`, `ember/attention.py`, `ember/loader.py`, `ember/tokenizer.py`, `ember/simple_generate.py`.
+- **Built**: `rill/model.py`, `rill/attention.py`, `rill/loader.py`, `rill/tokenizer.py`, `rill/simple_generate.py`.
 - **Verified**: per-layer hidden states and logits identical to HF (max abs diff 0.0, fp32 and bf16 on CPU);
   greedy decoding token-identical to `transformers.generate` on 8 prompts × 64 tokens (fp32 CPU, fp16 MPS).
 - **Measured**: single-request decode 45.9 tok/s on MPS fp16 vs 18.6 tok/s CPU fp32 (35.3 CPU bf16).
@@ -65,7 +69,7 @@ Hand-written SVG sources sit next to the PNGs; `docs/diagrams/render.sh` re-rend
   call per layer; a fused paged-attention kernel (vLLM/FlashInfer) does not exist for MPS, and writing a Metal
   kernel was out of scope. Alternative considered: a per-sequence Python loop over SDPA (no padding) — rejected
   because kernel launches scale with batch size, which is exactly what hurts on MPS.
-- **Built**: `ember/block_manager.py`, `ember/paged_attention.py`, `ember/model_runner.py`, `ember/sequence.py`.
+- **Built**: `rill/block_manager.py`, `rill/paged_attention.py`, `rill/model_runner.py`, `rill/sequence.py`.
 - **Verified**: hypothesis state-machine test of block-manager invariants; paged attention over mixed
   prefill-chunk/decode batches equals the full causal forward (block sizes 1, 3, 4, 16); real-model batched paged
   greedy == contiguous greedy.
@@ -82,7 +86,7 @@ Hand-written SVG sources sit next to the PNGs; `docs/diagrams/render.sh` re-rend
   sequence and *recompute* it later rather than swap: on unified memory, swapping to "CPU memory" buys nothing.
   Alternatives: prefill-first scheduling (better TTFT, worse ITL stalls); static batching (kept as a policy flag
   so the baseline uses identical kernels).
-- **Built**: `ember/scheduler.py`, `ember/engine.py`.
+- **Built**: `rill/scheduler.py`, `rill/engine.py`.
 - **Verified**: on the tiny model, outputs equal single-sequence greedy for roomy, chunked (budget 7 tokens),
   memory-tight (preempting), sequential and static configs; on the real model in fp32 with preemption too.
 - **Measured**: 48 requests with output lengths uniform[16,256]: continuous B=32 **377.3 tok/s** vs static B=32
@@ -101,8 +105,8 @@ Hand-written SVG sources sit next to the PNGs; `docs/diagrams/render.sh` re-rend
   list (an `OrderedDict` used as an LRU queue) until the space is needed — caching never reduces capacity. Only
   full blocks are shared and they are never written again, so no copy-on-write is required. Alternative: a radix
   tree over tokens (SGLang) — finer-grained matching but more complex eviction; not needed for this workload.
-- **Built**: prefix-cache half of `ember/block_manager.py`, admission in `ember/scheduler.py`, registration in
-  `ember/engine.py`.
+- **Built**: prefix-cache half of `rill/block_manager.py`, admission in `rill/scheduler.py`, registration in
+  `rill/engine.py`.
 - **Verified**: unit + state-machine tests (ref counts, LRU order, collision safety, hash ↔ block bijection);
   engine outputs identical with cache on/off on the fp32 tiny model, including forced evictions.
 - **Measured** (587-token shared system prompt, 32 requests): TTFT of cache hits **361.5 → 39.5 ms (9.2×)**;
@@ -120,7 +124,7 @@ Hand-written SVG sources sit next to the PNGs; `docs/diagrams/render.sh` re-rend
   per-request `asyncio.Queue` filled via `loop.call_soon_threadsafe`. Detokenization and stop strings run on the
   event loop. Alternatives: `run_in_executor` per step (more hand-offs, same GIL), or a separate engine process
   over ZMQ like vLLM (better isolation from the GIL; more moving parts than this project needs).
-- **Built**: `ember/server/{api,async_engine,metrics,protocol,__main__}.py`.
+- **Built**: `rill/server/{api,async_engine,metrics,protocol,__main__}.py`.
 - **Verified**: 10 API tests against a real localhost uvicorn server (tiny model, generated tokenizer — no
   download): streaming == non-streaming, stop strings never leak partially, client disconnect aborts the
   sequence and frees its blocks, 429 back-pressure then recovery, 504 timeout, 400/422 validation.
@@ -138,9 +142,9 @@ Hand-written SVG sources sit next to the PNGs; `docs/diagrams/render.sh` re-rend
 - **Built**: `benchmarks/loadgen.py`, `benchmarks/bench_serving.py`, `benchmarks/hf_server.py`,
   `benchmarks/summarize_serving.py`.
 - **Verified**: zero errors in all 66 measured points; repeat-to-repeat sd reported per point.
-- **Measured**: ember knee between 2 and 3 req/s (TTFT p99 0.47 s → 15.5 s); plateau **201.4 tok/s** vs naive HF
-  server **54.1 tok/s (3.7×)**; Ollama (4-bit, llama.cpp Metal) 217.3 tok/s — ember reaches ~93% of it with fp16
-  eager PyTorch, but Ollama's single-user TPOT is 9 ms vs ember's 26 ms.
+- **Measured**: rill knee between 2 and 3 req/s (TTFT p99 0.47 s → 15.5 s); plateau **201.4 tok/s** vs naive HF
+  server **54.1 tok/s (3.7×)**; Ollama (4-bit, llama.cpp Metal) 217.3 tok/s — rill reaches ~93% of it with fp16
+  eager PyTorch, but Ollama's single-user TPOT is 9 ms vs rill's 26 ms.
 - **Problems / fixes**: the first sweep collapsed at 128 tok/s. Mixed prefill+decode steps padded all decode
   rows to the prefill chunk length inside SDPA; decode and prefill rows are now attended in separate groups
   (mixed-step forward 4479.9 → 687.5 ms). The pre-fix log is kept in `results/`.
@@ -152,7 +156,7 @@ Hand-written SVG sources sit next to the PNGs; `docs/diagrams/render.sh` re-rend
   the optimization I chose weight-only int8 (per-channel symmetric, `torch._weight_int8pack_mm`) over
   speculative decoding: there is no smaller Qwen3 draft model, and prompt-lookup speculation needs KV-slot
   rollback in the paged cache — int8 could be finished and evaluated properly.
-- **Built**: `ember/sampling.py`, `ember/quant.py` (+ `--int8` server flag), `benchmarks/bench_quality.py`.
+- **Built**: `rill/sampling.py`, `rill/quant.py` (+ `--int8` server flag), `benchmarks/bench_quality.py`.
 - **Verified**: mask vs brute-force reference (hypothesis), empirical sampling frequencies vs softmax, seeded
   determinism across batch composition and preemption, int8 rounding error bound.
 - **Measured**: int8 perplexity **11.300 vs 11.286 fp16 (+0.13%)**, weights 1.19 → 0.75 GB, batch-1 decode
@@ -189,9 +193,9 @@ Hand-written SVG sources sit next to the PNGs; `docs/diagrams/render.sh` re-rend
 | K/V gather fix (56 gathers, B=32) | 81.0 → 12.7 ms | `benchmarks/micro_gather.py` | `results/micro_gather.json` |
 | prefix cache: TTFT of hits, 614-token prompts, final code | 359.8 → 39.6 ms (9.1×, n=3, cv ≤ 0.5%) | `benchmarks/bench_prefix.py` | `results/stage4_prefix_cache.json` |
 | prefix cache: batched throughput (B=16), final code | 63.1 → 153.5 tok/s (2.4×) | same | `results/stage4_prefix_cache.json` |
-| HTTP serving plateau, ember vs naive HF server | 201.4 vs 54.1 tok/s (3.7×), n=3 | `benchmarks/bench_serving.py` | `results/stage6_serving_{ember,hf}.json` |
-| ember saturation knee (open-loop, ~215-in/110-out tokens) | λ 2→3 req/s: TTFT p99 0.47 s → 15.5 s | same | `results/stage6_serving_ember.json` |
-| ember vs Ollama Q4_K_M peak / single-user TPOT | 201.4 vs 217.3 tok/s / 26 vs 9 ms | same | `results/stage6_serving_ollama.json` |
+| HTTP serving plateau, rill vs naive HF server | 201.4 vs 54.1 tok/s (3.7×), n=3 | `benchmarks/bench_serving.py` | `results/stage6_serving_{rill,hf}.json` |
+| rill saturation knee (open-loop, ~215-in/110-out tokens) | λ 2→3 req/s: TTFT p99 0.47 s → 15.5 s | same | `results/stage6_serving_ember.json` |
+| rill vs Ollama Q4_K_M peak / single-user TPOT | 201.4 vs 217.3 tok/s / 26 vs 9 ms | same | `results/stage6_serving_ollama.json` |
 | mixed prefill+decode step fix (1024 chunk + 31 decodes) | 4479.9 → 687.5 ms | `benchmarks/micro_mixed_step.py` | `results/micro_mixed_step.json` |
 | int8 W8A16: perplexity / weights / batch-1 decode | +0.13% / −37% / +20% (51.0 vs 42.4 tok/s) | `benchmarks/bench_quality.py` | `results/stage7_quality_speed.json` |
 | sampled (top-p) decode at B=32, before → after sampler fix | 235.8 → 398.5 tok/s | same | `results/stage7_quality_speed{_before_sampler_fix,}.json` |
@@ -223,9 +227,9 @@ Hand-written SVG sources sit next to the PNGs; `docs/diagrams/render.sh` re-rend
 
 ## Repository layout
 ```
-ember/            engine: config, model, loader, tokenizer, attention (simple caches), paged_attention,
+rill/            engine: config, model, loader, tokenizer, attention (simple caches), paged_attention,
                   block_manager, sequence, scheduler, model_runner, engine, sampling, quant, simple_generate
-ember/server/     protocol (pydantic), async_engine (engine thread bridge), api (FastAPI), metrics, __main__
+rill/server/     protocol (pydantic), async_engine (engine thread bridge), api (FastAPI), metrics, __main__
 tests/            70 tests: tiny random model + generated tokenizer (CI) and real_model parity tests (local)
 benchmarks/       every benchmark + load generator + HF baseline server; data/ (prompts, system prompt)
 results/          raw JSON/logs for every number in the docs
@@ -236,7 +240,7 @@ docs/             ARCHITECTURE.md, CAPACITY.md
 
 Serve (OpenAI-compatible; works with the `openai` SDK by pointing `base_url` at it):
 ```bash
-uv run python -m ember.server --port 8100            # MPS fp16 if available, else CPU fp32
+uv run python -m rill.server --port 8100            # MPS fp16 if available, else CPU fp32
 curl -s localhost:8100/v1/chat/completions -H 'content-type: application/json' \
   -d '{"messages":[{"role":"user","content":"Hello!"}],"temperature":0,"max_tokens":32}'
 curl -s localhost:8100/metrics | grep ember_
@@ -254,9 +258,9 @@ uv run python -m benchmarks.bench_decode_batch
 uv run python -m benchmarks.bench_batching
 uv run python -m benchmarks.bench_prefix
 uv run python -m benchmarks.bench_quality
-uv run python -m benchmarks.bench_serving --backend ember --port 8100 --rates 0.5,1,2,3,4,6 --concurrency 1,8,32
+uv run python -m benchmarks.bench_serving --backend rill --port 8100 --rates 0.5,1,2,3,4,6 --concurrency 1,8,32
 ```
-Docker (CPU): `docker build -t ember:cpu . && docker run --rm -p 8100:8100 -v ~/.cache/huggingface:/models:ro ember:cpu`.
+Docker (CPU): `docker build -t rill:cpu . && docker run --rm -p 8100:8100 -v ~/.cache/huggingface:/models:ro rill:cpu`.
 CI locally: `uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest -q`.
 The real-model tests/benchmarks expect `Qwen/Qwen3-0.6B` in the local Hugging Face cache; nothing is downloaded.
 
@@ -269,8 +273,8 @@ The real-model tests/benchmarks expect `Qwen/Qwen3-0.6B` in the local Hugging Fa
 - No tensor/pipeline parallelism, multi-GPU, LoRA, beam search, n > 1, logprobs, or tool calling.
 - Only the Qwen3 dense architecture (no MoE, no rope scaling / sliding window).
 - Pure PyTorch eager; no custom kernels, no CUDA graphs. Batch-1 decode is launch-overhead bound.
-- Single-stream latency: per-step Python overhead (scheduler, metadata, engine-thread hand-off) makes ember's
-  concurrency-1 TPOT (26 ms) worse than HF `generate` (17 ms) and Ollama (9 ms); ember only wins under load.
+- Single-stream latency: per-step Python overhead (scheduler, metadata, engine-thread hand-off) makes rill's
+  concurrency-1 TPOT (26 ms) worse than HF `generate` (17 ms) and Ollama (9 ms); rill only wins under load.
 - Prefill is slow (eager fp16 matmuls on the M2 GPU): on prefill-heavy traffic the plateau is ~200 tok/s, far
   below the 518 tok/s decode-only rate.
 - Paged attention gathers each sequence's K/V into a padded tensor every layer (no fused paged-attention kernel

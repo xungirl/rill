@@ -8,7 +8,7 @@ Backends in this file are the simple ones (stage 1):
   * `NoCacheAttention`     - one sequence, no cache (parity tests, scoring).
   * `ContiguousKVCache`    - one sequence, a preallocated [max_len] buffer per
                              layer. This is the "naive" cache that the paged
-                             cache (ember/paged_attention.py) is compared to.
+                             cache (rill/paged_attention.py) is compared to.
 """
 
 from __future__ import annotations

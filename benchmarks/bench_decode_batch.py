@@ -15,10 +15,10 @@ from typing import Any
 import torch
 
 from benchmarks.common import load1, summarize, wait_for_quiet, write_result
-from ember.engine import EngineConfig, LLMEngine
-from ember.loader import load_model
-from ember.sampling import SamplingParams
-from ember.scheduler import SchedulerConfig
+from rill.engine import EngineConfig, LLMEngine
+from rill.loader import load_model
+from rill.sampling import SamplingParams
+from rill.scheduler import SchedulerConfig
 
 BATCHES = [1, 4, 8, 16, 32, 64]
 NEW_TOKENS = 128

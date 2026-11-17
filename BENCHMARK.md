@@ -1,4 +1,4 @@
-# ember benchmarks
+# rill benchmarks
 
 All numbers below were measured on **one laptop**: Apple M2 (8 CPU cores, 24 GB unified memory), macOS,
 Python 3.15.2, PyTorch 2.15.0 (MPS backend). Everything runs locally; servers are on localhost.
@@ -141,7 +141,7 @@ fp32 model the outputs are identical in all cases, including a 40-block pool tha
 ## Stage 5 — serving API (functional, not a benchmark)
 
 `results/stage5_smoke.txt` is a captured session against the real model
-(`uv run python -m ember.server --port 8100`): a chat completion ("The capital of France is Paris.", TTFT 194 ms
+(`uv run python -m rill.server --port 8100`): a chat completion ("The capital of France is Paris.", TTFT 194 ms
 for the first request after start-up), an SSE stream with `include_usage`, a stop-sequence request
 (`" 7"` → text ends at `" 6,"`, `finish_reason: "stop"`), and the Prometheus metrics it produced. Serving
 performance is measured under load in Stage 6.
@@ -150,7 +150,7 @@ performance is measured under load in Stage 6.
 
 Commands (each: start server, warm up, sweep, 3 repeats with the load gate, stop server):
 ```bash
-uv run python -m benchmarks.bench_serving --backend ember --port 8100 --rates 0.5,1,2,3,4,6 --concurrency 1,8,32 \
+uv run python -m benchmarks.bench_serving --backend rill --port 8100 --rates 0.5,1,2,3,4,6 --concurrency 1,8,32 \
     --repeats 3 --server-args "--max-inflight 512"
 uv run python -m benchmarks.bench_serving --backend hf --port 8101 --rates 0.2,0.5,1 --concurrency 1 --repeats 3 \
     --min-requests 16
@@ -160,13 +160,13 @@ uv run python -m benchmarks.summarize_serving results/stage6_serving_*.json
 ```
 Workload (`benchmarks/loadgen.py`, synthetic, seeded; ShareGPT was not downloaded): prompt length
 LogNormal(ln 160, 0.6) clipped [16, 1024], output length LogNormal(ln 100, 0.6) clipped [16, 400]; prompt text is
-decoded random vocabulary ids. Measured averages: ~215 prompt / ~110 output tokens per request (ember). Each
+decoded random vocabulary ids. Measured averages: ~215 prompt / ~110 output tokens per request (rill). Each
 repeat uses a different seed, so ± includes workload variation. Open loop = Poisson arrivals; points send
 max(30, 40·λ) requests. TTFT = send → first streamed text chunk; TPOT = (e2e − TTFT)/(tokens − 1). req/s is
 completed requests / (first send → last finish), so it sits below λ at low load (the tail is included).
 Everything on one laptop over localhost; the load generator shares the CPU with the server.
 
-**ember** (`results/stage6_serving_ember.json`, 3 repeats)
+**rill** (`results/stage6_serving_ember.json`, 3 repeats)
 
 | load | output tok/s (mean ± sd) | req/s | TTFT p50 | TTFT p99 | TPOT p50 | TPOT p99 | e2e p50 | e2e p99 | errors |
 |---|---|---|---|---|---|---|---|---|---|
@@ -210,22 +210,22 @@ load1 at the start of each point: 1.3–2.4
 load1 at the start of each point: 2.1–3.9
 
 ### Reading the numbers
-- **Saturation knee (ember)**: between λ=2 and λ=3 req/s. At λ=2 TTFT p99 is 0.47 s; at λ=3 it is 15.5 s and
+- **Saturation knee (rill)**: between λ=2 and λ=3 req/s. At λ=2 TTFT p99 is 0.47 s; at λ=3 it is 15.5 s and
   climbs linearly with λ afterwards (queueing), while throughput plateaus at ~200 tok/s / ~1.74 req/s.
   This workload is prefill-heavy (~2 prompt tokens per output token), so the plateau is far below the 517.8 tok/s
   decode-only number of Stage 3.
 - **vs naive HF server**: peak sustained throughput 201.4 vs 54.1 tok/s (**3.7×**); HF saturates already at
-  ~0.47 req/s, and at λ=1 its TTFT p50 is 22.2 s vs ember's 0.07 s.
-- **vs Ollama (llama.cpp Metal, 4-bit Q4_K_M weights, 8 parallel slots)**: not like-for-like (ember runs fp16
-  weights in eager PyTorch). Ollama peaks at 217.3 tok/s (ember reaches ~93% of that) and is clearly better at
-  low concurrency: single-user TPOT 9 ms vs ember 26 ms. Ollama's Qwen3 runs in thinking mode via its
+  ~0.47 req/s, and at λ=1 its TTFT p50 is 22.2 s vs rill's 0.07 s.
+- **vs Ollama (llama.cpp Metal, 4-bit Q4_K_M weights, 8 parallel slots)**: not like-for-like (rill runs fp16
+  weights in eager PyTorch). Ollama peaks at 217.3 tok/s (rill reaches ~93% of that) and is clearly better at
+  low concurrency: single-user TPOT 9 ms vs rill 26 ms. Ollama's Qwen3 runs in thinking mode via its
   chat template and streams hidden thinking tokens as empty-text chunks; for Ollama TTFT is taken at the first
   chunk (`loadgen.TTFT_ON_ANY_CHUNK`), and `ignore_eos` is not supported (outputs still averaged ~111 tokens).
-- **Single-stream latency is ember's weak spot**: HF `generate` (17 ms TPOT) beats ember's server at
-  concurrency 1 (26 ms) even though an isolated ember decode step is not slower (21.0 ms vs 22.6 ms for a bare HF
+- **Single-stream latency is rill's weak spot**: HF `generate` (17 ms TPOT) beats rill's server at
+  concurrency 1 (26 ms) even though an isolated rill decode step is not slower (21.0 ms vs 22.6 ms for a bare HF
   forward with cache, scratch measurement, not committed). The difference is per-step Python overhead in the
   engine (scheduling, metadata, sampling bookkeeping) plus the engine-thread/event-loop hand-off and GIL sharing.
-- **Bug found by this benchmark**: the first ember sweep saturated at ~128 tok/s with TTFT p99 16 s at λ=2
+- **Bug found by this benchmark**: the first rill sweep saturated at ~128 tok/s with TTFT p99 16 s at λ=2
   (`results/stage6_serving_ember_before_split_attention.log`). Cause: mixed prefill+decode steps padded every
   decode row to the prefill chunk length inside one SDPA call. Splitting decode and prefill rows into separate
   attention groups fixed it (mixed 1024-chunk step 4479.9 → 687.5 ms, `results/micro_mixed_step.json`).
@@ -288,7 +288,7 @@ prefix run is prefill-heavy (16 × 614-token prompts in mixed steps) and got 30%
 which shrinks the relative benefit of the prefix cache from 3.1× to 2.4×; the README reports the final numbers.
 
 ## Stage 8 — Docker and CI (functional)
-- `docker build -t ember:cpu .` under colima (aarch64 VM, Docker 29.5.2): built in 1:44, 539 MB content
+- `docker build -t rill:cpu .` under colima (aarch64 VM, Docker 29.5.2): built in 1:44, 539 MB content
   (`results/stage8_docker_build.log`). Torch inside is `2.15.0+cpu` from the PyTorch CPU index.
 - Container smoke test with the HF cache mounted read-only: `/health` ok, chat completion "The capital of France
   is Paris." (CPU fp32 in the VM: TTFT 0.91 s, e2e 3.70 s for 8 tokens) — `results/stage8_docker_smoke.txt`.

@@ -2,7 +2,7 @@
 
 ## 2026-11-14 — Stage 1: model from scratch
 - Implemented Qwen3 (RMSNorm, RoPE, GQA with per-head q/k RMSNorm, SwiGLU, tied embeddings) in plain PyTorch,
-  loading `model.safetensors` directly (fused qkv / gate-up at load time). No `transformers` in `ember/`.
+  loading `model.safetensors` directly (fused qkv / gate-up at load time). No `transformers` in `rill/`.
 - Attention is behind an `AttentionBackend` protocol (no-cache, contiguous cache now; paged later).
 - Verified: per-layer and logits diff vs HF = 0.0 (fp32 & bf16 CPU); greedy 8×64 tokens identical in fp32 CPU and
   fp16 MPS. Found bf16 on MPS diverges (3/8 vs fp32 reference, 6/8 vs HF bf16 MPS) → fp16 default on MPS.
@@ -66,11 +66,11 @@
 ## 2026-11-14 — Stage 6: load testing
 - Own load generator (open-loop Poisson + closed-loop, SSE, usage-based token counts), naive HF baseline server,
   sweep orchestrator with load gating, summarizer.
-- **Found a real perf bug**: first ember sweep saturated at ~128 tok/s with TTFT p99 16 s at λ=2. Mixed
+- **Found a real perf bug**: first rill sweep saturated at ~128 tok/s with TTFT p99 16 s at λ=2. Mixed
   prefill+decode steps padded every decode row to the prefill chunk length in one SDPA call (~32× attention work
   with one 1024-token chunk + 31 decodes). Fixed by attending decode rows and prefill rows in separate groups:
   mixed-step forward 4479.9 → 687.5 ms. Rerun: knee between λ=2 and 3 req/s, plateau ~201 tok/s.
-- Baselines: HF `generate` server (one at a time) peaks at 54.1 tok/s → ember 3.7×. Ollama 0.34.4
+- Baselines: HF `generate` server (one at a time) peaks at 54.1 tok/s → rill 3.7×. Ollama 0.34.4
   (qwen3:0.6b Q4_K_M, 522 MB pull) peaks at 217.3 tok/s and has much lower single-user TPOT (9 vs 26 ms).
 - Problems: port 8000 occupied by an unrelated app → 8100/8101; Ollama hides Qwen3 thinking tokens as empty
   chunks → TTFT measured at first chunk for Ollama (documented); a shell `&&` chain skipped a `mv` because ruff

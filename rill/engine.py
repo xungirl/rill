@@ -1,7 +1,7 @@
 """LLMEngine: the synchronous core loop. schedule -> execute -> sample -> update.
 
 The engine is single-threaded and knows nothing about HTTP. The async server
-(ember/server) runs `step()` in a dedicated thread and feeds it requests.
+(rill/server) runs `step()` in a dedicated thread and feeds it requests.
 """
 
 from __future__ import annotations
@@ -12,13 +12,13 @@ from dataclasses import dataclass, field
 
 import torch
 
-from ember.block_manager import BlockManager
-from ember.model import Qwen3Model
-from ember.model_runner import ModelRunner
-from ember.paged_attention import PagedKVCache
-from ember.sampling import SamplingParams, sample
-from ember.scheduler import Scheduler, SchedulerConfig
-from ember.sequence import Sequence
+from rill.block_manager import BlockManager
+from rill.model import Qwen3Model
+from rill.model_runner import ModelRunner
+from rill.paged_attention import PagedKVCache
+from rill.sampling import SamplingParams, sample
+from rill.scheduler import Scheduler, SchedulerConfig
+from rill.sequence import Sequence
 
 
 @dataclass(frozen=True)

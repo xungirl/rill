@@ -7,9 +7,9 @@ import copy
 import torch
 from torch import nn
 
-from ember.attention import NoCacheAttention
-from ember.model import Qwen3Model
-from ember.quant import Int8Linear, quantize_int8, weight_bytes
+from rill.attention import NoCacheAttention
+from rill.model import Qwen3Model
+from rill.quant import Int8Linear, quantize_int8, weight_bytes
 
 
 def test_int8_linear_roundtrip_error_is_bounded() -> None:

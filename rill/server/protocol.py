@@ -1,4 +1,4 @@
-"""OpenAI-compatible request/response schemas (the subset ember implements)."""
+"""OpenAI-compatible request/response schemas (the subset rill implements)."""
 
 from __future__ import annotations
 

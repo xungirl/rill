@@ -7,9 +7,9 @@ from dataclasses import dataclass
 import torch
 from torch import Tensor
 
-from ember.model import Qwen3Model
-from ember.paged_attention import PagedAttention, PagedAttentionMetadata, PagedKVCache
-from ember.sequence import Sequence
+from rill.model import Qwen3Model
+from rill.paged_attention import PagedAttention, PagedAttentionMetadata, PagedKVCache
+from rill.sequence import Sequence
 
 
 @dataclass

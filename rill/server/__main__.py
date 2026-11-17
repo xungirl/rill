@@ -1,4 +1,4 @@
-"""Launch the server: uv run python -m ember.server --device mps --port 8000"""
+"""Launch the server: uv run python -m rill.server --device mps --port 8000"""
 
 from __future__ import annotations
 
@@ -9,19 +9,19 @@ import sys
 import torch
 import uvicorn
 
-from ember.engine import EngineConfig, LLMEngine
-from ember.loader import DEFAULT_MODEL, load_model, resolve_model_dir
-from ember.quant import quantize_int8
-from ember.scheduler import SchedulerConfig
-from ember.server.api import create_app
-from ember.server.async_engine import AsyncLLMEngine
-from ember.tokenizer import Tokenizer
+from rill.engine import EngineConfig, LLMEngine
+from rill.loader import DEFAULT_MODEL, load_model, resolve_model_dir
+from rill.quant import quantize_int8
+from rill.scheduler import SchedulerConfig
+from rill.server.api import create_app
+from rill.server.async_engine import AsyncLLMEngine
+from rill.tokenizer import Tokenizer
 
 DTYPES = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
 
 
 def main(argv: list[str] | None = None) -> None:
-    ap = argparse.ArgumentParser(description="ember OpenAI-compatible server")
+    ap = argparse.ArgumentParser(description="rill OpenAI-compatible server")
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--device", default="mps" if torch.backends.mps.is_available() else "cpu")
     ap.add_argument("--dtype", choices=DTYPES, default=None, help="default: float16 on mps, float32 on cpu")

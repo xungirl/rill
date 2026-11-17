@@ -16,10 +16,10 @@ import torch
 from transformers import AutoModelForCausalLM
 
 from benchmarks.common import write_result
-from ember.attention import NoCacheAttention
-from ember.loader import load_model, resolve_model_dir
-from ember.simple_generate import generate_greedy
-from ember.tokenizer import Tokenizer
+from rill.attention import NoCacheAttention
+from rill.loader import load_model, resolve_model_dir
+from rill.simple_generate import generate_greedy
+from rill.tokenizer import Tokenizer
 
 PROMPTS = [
     "The capital of France is",

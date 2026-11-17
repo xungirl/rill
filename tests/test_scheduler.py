@@ -8,12 +8,12 @@ from typing import Any
 import pytest
 import torch
 
-from ember.engine import EngineConfig, LLMEngine
-from ember.model import Qwen3Model
-from ember.sampling import SamplingParams
-from ember.scheduler import SchedulerConfig
-from ember.sequence import SequenceStatus
-from ember.simple_generate import generate_greedy
+from rill.engine import EngineConfig, LLMEngine
+from rill.model import Qwen3Model
+from rill.sampling import SamplingParams
+from rill.scheduler import SchedulerConfig
+from rill.sequence import SequenceStatus
+from rill.simple_generate import generate_greedy
 
 
 def make_prompts(n: int, vocab: int, seed: int, lo: int = 1, hi: int = 40) -> list[list[int]]:
@@ -163,8 +163,8 @@ def test_generate_preserves_input_order(tiny_model: Qwen3Model) -> None:
 def test_real_model_continuous_batching_matches_reference_fp32() -> None:
     """With exact (fp32, CPU) arithmetic, continuous batching with chunked prefill and
     preemption reproduces single-sequence greedy decoding token for token."""
-    from ember.loader import load_model, resolve_model_dir
-    from ember.tokenizer import Tokenizer
+    from rill.loader import load_model, resolve_model_dir
+    from rill.tokenizer import Tokenizer
 
     tok = Tokenizer(resolve_model_dir())
     model = load_model(device="cpu", dtype=torch.float32)

@@ -2,7 +2,7 @@
 block tables, reference counts and (optionally) hash-based prefix caching.
 Pure Python - no tensors live here.
 
-The physical KV pool (ember/paged_attention.py) is an array of `num_blocks`
+The physical KV pool (rill/paged_attention.py) is an array of `num_blocks`
 blocks, each holding K/V for `block_size` consecutive tokens. A sequence's
 `block_table[i]` is the physical block holding its tokens
 [i*block_size, (i+1)*block_size). Logical token t therefore lives in slot
@@ -34,7 +34,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from dataclasses import dataclass
 
-from ember.sequence import Sequence
+from rill.sequence import Sequence
 
 
 @dataclass

@@ -27,8 +27,8 @@ from dataclasses import dataclass
 import torch
 from torch import Tensor
 
-from ember.attention import sdpa
-from ember.config import ModelConfig
+from rill.attention import sdpa
+from rill.config import ModelConfig
 
 
 class PagedKVCache:

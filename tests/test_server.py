@@ -19,13 +19,13 @@ import httpx
 import pytest
 import uvicorn
 
-from ember.config import tiny_config
-from ember.engine import EngineConfig, LLMEngine
-from ember.loader import random_model
-from ember.scheduler import SchedulerConfig
-from ember.server.api import create_app
-from ember.server.async_engine import AsyncLLMEngine, _stop_holdback
-from ember.tokenizer import Tokenizer
+from rill.config import tiny_config
+from rill.engine import EngineConfig, LLMEngine
+from rill.loader import random_model
+from rill.scheduler import SchedulerConfig
+from rill.server.api import create_app
+from rill.server.async_engine import AsyncLLMEngine, _stop_holdback
+from rill.tokenizer import Tokenizer
 from tests.tiny_tokenizer import IM_END, write_tiny_tokenizer
 
 

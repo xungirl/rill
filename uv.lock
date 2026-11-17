@@ -109,7 +109,7 @@ wheels = [
 ]
 
 [[package]]
-name = "ember"
+name = "rill"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

@@ -29,12 +29,12 @@ from typing import Any
 import torch
 
 from benchmarks.common import load1, percentile, summarize, wait_for_quiet, write_result
-from ember.engine import EngineConfig, LLMEngine
-from ember.loader import load_model, resolve_model_dir
-from ember.model import Qwen3Model
-from ember.sampling import SamplingParams
-from ember.scheduler import SchedulerConfig
-from ember.tokenizer import Tokenizer
+from rill.engine import EngineConfig, LLMEngine
+from rill.loader import load_model, resolve_model_dir
+from rill.model import Qwen3Model
+from rill.sampling import SamplingParams
+from rill.scheduler import SchedulerConfig
+from rill.tokenizer import Tokenizer
 
 PROMPTS = Path(__file__).parent / "data" / "prompts.txt"
 NUM_REQUESTS = 48

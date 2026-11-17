@@ -1,5 +1,5 @@
 [project]
-name = "ember"
+name = "rill"
 version = "0.1.0"
 requires-python = ">=3.15"
 dependencies = [
@@ -29,7 +29,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["ember"]
+packages = ["rill"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -53,7 +53,7 @@ strict = true
 warn_unreachable = true
 # torch's nn.Module.__call__ returns Any, so every `return self.proj(x)` would be flagged.
 warn_return_any = false
-files = ["ember", "benchmarks", "tests"]
+files = ["rill", "benchmarks", "tests"]
 
 [[tool.mypy.overrides]]
 module = ["safetensors.*", "transformers.*", "hypothesis.*", "prometheus_client.*", "tokenizers.*"]
@@ -61,7 +61,7 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 # safetensors' safe_open handle and transformers models are untyped
-module = ["ember.loader", "tests.*", "benchmarks.*"]
+module = ["rill.loader", "tests.*", "benchmarks.*"]
 disallow_untyped_calls = false
 
 # Linux (Docker, CI) gets CPU-only torch wheels; macOS keeps the PyPI wheel (with MPS).

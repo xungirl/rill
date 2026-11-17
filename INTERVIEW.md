@@ -1,4 +1,4 @@
-# ember 面试准备手册（INTERVIEW.md）
+# rill 面试准备手册（INTERVIEW.md）
 
 > 用法：按「教学顺序」一个文件一个文件读。每个文件分三层：
 > **(a) 骨架**——这个文件由哪几块组成、数据怎么流；**(b) 为什么**——设计动机和取舍；**(c) 语法**——看不懂的 Python/PyTorch 写法。
@@ -10,14 +10,14 @@
 ## Stage 1 — 从零写 Qwen3 前向（Model from scratch）
 
 ### 读代码顺序
-`ember/config.py` → `ember/model.py` → `ember/attention.py` → `ember/loader.py` → `ember/tokenizer.py` → `ember/simple_generate.py` → `tests/test_model.py` → `tests/test_parity_hf.py` → `benchmarks/parity_report.py` / `benchmarks/bench_single.py`
+`rill/config.py` → `rill/model.py` → `rill/attention.py` → `rill/loader.py` → `rill/tokenizer.py` → `rill/simple_generate.py` → `tests/test_model.py` → `tests/test_parity_hf.py` → `benchmarks/parity_report.py` / `benchmarks/bench_single.py`
 
-### 1. `ember/config.py`
+### 1. `rill/config.py`
 **(a) 骨架**：一个冻结的 `ModelConfig` 数据类（dataclass）+ `from_pretrained_dir()` 读 HF 的 `config.json` + `tiny_config()` 造一个迷你模型配置给单元测试用。
 **(b) 为什么**：引擎运行时不依赖 `transformers`，只需要前向用到的十几个超参数。`kv_bytes_per_token()` 是整个项目最重要的一行数学：每个 token 的 KV 缓存（KV cache）占 `2(K和V) × 层数 × kv头数 × head_dim × 每元素字节`。Qwen3-0.6B fp16：2×28×8×128×2 = 114,688 B ≈ 112 KiB/token。之后算「2 GiB 能放多少 token」全靠它。
 **(c) 语法**：`@dataclass(frozen=True)` = 不可变的值对象（像 Java 的 record）；`@property` = 无参 getter；`@classmethod` = 工厂方法（像 Java 的 static factory）。
 
-### 2. `ember/model.py`（核心）
+### 2. `rill/model.py`（核心）
 **(a) 骨架**：`RMSNorm` → `RotaryEmbedding`（RoPE）→ `Attention`（GQA + q/k norm）→ `MLP`（SwiGLU）→ `DecoderLayer`（两个残差块）→ `Qwen3Model`（embedding → 28 层 → norm → logits）。
 所有张量都是「打平的 token」布局 `[T, ...]`：一个 batch 里所有序列的 token 首尾相接（packed / varlen），只有注意力需要知道哪个 token 属于哪个序列——这个知识封装在传进来的 `AttentionBackend` 里。
 **(b) 为什么**：
@@ -31,23 +31,23 @@
 - **绑定词嵌入（tied embeddings）**：`logits = h @ embed_tokens.weight.T`，不单独存 lm_head。
 **(c) 语法**：`nn.Module` 的 `forward` 通过 `module(x)` 调用；`register_buffer(..., persistent=False)` = 跟着 `.to(device)` 走但不进 state_dict；`x.chunk(2, -1)` 沿最后一维切两半；`F.silu` = x·sigmoid(x)。
 
-### 3. `ember/attention.py`
+### 3. `rill/attention.py`
 **(a) 骨架**：`AttentionBackend` 协议（Protocol，像 Java interface）只有一个方法 `forward(layer_idx, q, k, v)`；两个实现：`NoCacheAttention`（无缓存，单序列因果注意力）和 `ContiguousKVCache`（为单序列预留 `max_len` 长度的连续缓存）。
 **(b) 为什么**：把「KV 存哪、怎么读」从模型里抽出来，模型代码一行不改就能换成 Stage 2 的分页缓存（PagedAttention）。`ContiguousKVCache` 故意保留作为 naive 基线：它一开始就把 `max_len` 全部预留——这正是分页要消除的浪费。
 因果 mask 的偏移：第 i 个新 query 的绝对位置是 `start_pos + i`，它能看到 key `j <= start_pos + i`。decode 时只有 1 个 query，可以看全部，所以 `mask=None`。
 **(c) 语法**：`typing.Protocol` = 结构化类型（鸭子类型），不需要显式继承；`F.scaled_dot_product_attention(..., enable_gqa=True)` 让 PyTorch 自己处理 GQA，不用 `repeat_interleave` 复制 KV。
 
-### 4. `ember/loader.py`
+### 4. `rill/loader.py`
 **(a) 骨架**：`resolve_model_dir`（手动解析 HF 缓存目录 `refs/main` → snapshot）→ `_checkpoint_name_map`（我们的参数名 → checkpoint 张量名列表）→ `load_model`（meta 设备上建模型 → 读 safetensors → 拼接融合 → `load_state_dict(assign=True)`）。
 **(b) 为什么**：`torch.device("meta")` 上建模型不分配内存，再用 `assign=True` 直接把读进来的张量换进去，避免「先随机初始化一份、再拷贝」的双倍内存。RoPE 表是 buffer 不在 checkpoint 里，所以要 `_materialize_buffers` 重新在真实设备上建。checkpoint 里虽然有 `lm_head.weight`，但 tie=True 时我们不用它。
 **(c) 语法**：`safe_open(path, framework="pt")` 是内存映射（mmap）读取，按需加载单个张量。
 
-### 5. `ember/tokenizer.py`
+### 5. `rill/tokenizer.py`
 **(a) 骨架**：`Tokenizer`（包装 `tokenizers` 库 + 用 jinja2 渲染模型自带的 chat template）和 `IncrementalDetokenizer`（流式输出时把 token 增量变成文本）。
 **(b) 为什么**：BPE token 不是一一对应字符，一个中文字/emoji 的 UTF-8 字节可能被拆到两个 token 里，单独解码会得到 `U+FFFD`（�）。所以末尾是 � 时先不输出，等后续 token 补全。测试里验证了我们的 chat template 渲染和 HF `apply_chat_template` 字符串完全一致。
 **(c) 语法**：`ImmutableSandboxedEnvironment` = 安全的 jinja2 沙箱（模板来自模型仓库，不可信）。
 
-### 6. `ember/simple_generate.py`
+### 6. `rill/simple_generate.py`
 **(a) 骨架**：一次 prefill（整段 prompt 前向）→ 循环 decode（每次 1 个 token，复用缓存）→ greedy argmax。
 **(b) 为什么**：最简单、最可信的参考实现。后面批处理引擎的输出必须和它逐 token 相同（测试里就是这样比的）。
 **(c) 语法**：`@torch.inference_mode()` 比 `no_grad` 更彻底地关闭 autograd 记录。
@@ -79,14 +79,14 @@
 ## Stage 2 — 分页 KV 缓存（Paged KV cache）
 
 ### 读代码顺序
-`ember/sequence.py` → `ember/block_manager.py` → `ember/paged_attention.py` → `ember/model_runner.py` → `tests/test_block_manager.py` → `tests/test_paged_attention.py` → `benchmarks/bench_memory.py`
+`rill/sequence.py` → `rill/block_manager.py` → `rill/paged_attention.py` → `rill/model_runner.py` → `tests/test_block_manager.py` → `tests/test_paged_attention.py` → `benchmarks/bench_memory.py`
 
-### 1. `ember/sequence.py`
+### 1. `rill/sequence.py`
 **(a) 骨架**：`Sequence` 数据类：`token_ids`（prompt + 已生成）、`num_computed_tokens`（已经写进 KV 缓存的 token 数）、`block_table`、状态（WAITING / RUNNING / FINISHED）。
 **(b) 为什么**：整个调度器只看一个差值 `num_tokens - num_computed_tokens`：>1 是 prefill（可能分块），=1 是 decode。分块 prefill（chunked prefill）、前缀缓存命中（prefix cache hit，直接把 computed 往前推）、抢占重算（preemption by recompute，把 computed 归零）全都是改这一个计数器——同一条代码路径。
 **(c) 语法**：`field(default_factory=list)` 避免可变默认值共享；`field(init=False)` + `__post_init__` 在构造后派生字段；`eq=False` 让对象按身份比较（`seq in list` 不会逐字段比）。
 
-### 2. `ember/block_manager.py`
+### 2. `rill/block_manager.py`
 **(a) 骨架**：`Block(block_id, ref_count)` 列表 + `free_block_ids` 双端队列（deque，空闲链表）。核心方法：`num_new_blocks_needed` / `can_allocate` / `allocate_slots` / `free` / `fork`。逻辑位置 t 的物理槽位（slot）= `block_table[t // bs] * bs + t % bs`。
 **(b) 为什么**：
 - 和操作系统虚拟内存一样：逻辑连续、物理不连续。按需分配，一个序列最多浪费 `block_size-1` 个槽（内部碎片，internal fragmentation），任何空闲块都能接到任何序列后面，所以没有外部碎片（external fragmentation）。
@@ -95,7 +95,7 @@
 - 引用计数（ref count）支持共享块：`fork` 让子序列共享父序列的块；只共享**满的**块，所以不需要写时复制（copy-on-write）。
 **(c) 语法**：`-(-n // k)` 是整数向上取整；`deque.popleft()` O(1)。
 
-### 3. `ember/paged_attention.py`（核心）
+### 3. `rill/paged_attention.py`（核心）
 **(a) 骨架**：`PagedKVCache`（每层一个扁平的 `[num_blocks*bs, kv_heads, d]` K 池和 V 池）；`PagedAttentionMetadata.build`（每步构建一次、所有层共享：`slot_mapping`、`gather_slots`、`query_index`、`mask`）；`PagedAttention.forward` 三步：① `index_copy_` 按 slot 写入新 K/V ② 按 `gather_slots` 把每个序列的上下文收集成 `[B, kv_heads, S, d]` ③ 把打平的 query 散到 `[B, H, max_q, d]`，一次批量 SDPA，再按 `query_index` 收回来。
 **(b) 为什么**：
 - mask 同时编码两件事：key 存在（`j < context_len`）和因果（`j <= query 的绝对位置`）。query i 的绝对位置是 `context_len - query_len + i`——这个公式让同一套代码处理 prefill、分块 prefill、decode。
@@ -103,7 +103,7 @@
 - 代价（诚实说）：没有融合的 paged attention kernel（vLLM 用 CUDA kernel 直接按块表读），我们每层都把 K/V 真的复制出来，访存 ∝ batch × 最长上下文。
 **(c) 语法**：`tensor[index_tensor]` 是高级索引（gather，会复制）；`index_copy_(0, idx, src)` 原地按行写；`@classmethod build` 是工厂方法。
 
-### 4. `ember/model_runner.py`
+### 4. `rill/model_runner.py`
 **(a) 骨架**：`ScheduledSeq(seq, num_new_tokens)` + `ModelRunner.execute(batch)`：拼 `input_ids`/`positions` → 建 metadata → 前向 → 只对 `completes_sequence` 的序列取最后一个 token 算 logits。
 **(b) 为什么**：分块 prefill 的中间块不需要采样，就不做 `[H,V]` 投影（省最大的那个 matmul）。
 **(c) 语法**：`torch.inference_mode()` 装饰器。
@@ -134,9 +134,9 @@
 ## Stage 3 — 连续批处理调度器（Continuous batching scheduler）
 
 ### 读代码顺序
-`ember/scheduler.py` → `ember/engine.py` → `tests/test_scheduler.py` → `benchmarks/micro_gather.py` → `benchmarks/bench_decode_batch.py` → `benchmarks/bench_batching.py`
+`rill/scheduler.py` → `rill/engine.py` → `tests/test_scheduler.py` → `benchmarks/micro_gather.py` → `benchmarks/bench_decode_batch.py` → `benchmarks/bench_batching.py`
 
-### 1. `ember/scheduler.py`（核心）
+### 1. `rill/scheduler.py`（核心）
 **(a) 骨架**：`SchedulerConfig`（`max_num_seqs` 并发上限、`max_num_batched_tokens` 每步 token 预算、`chunked_prefill`、`policy`）；`Scheduler` 持有 `waiting`（deque）和 `running`（list）两个队列；`schedule()` 每步从零决定这一步跑谁、每个跑几个 token，分两段：① 先排 running（decode 1 个 token，或未完成 prefill 的下一块）② 剩余预算按 FCFS 接纳 waiting。`_preempt()` 抢占；`finish()` 结束并释放块。
 **(b) 为什么**：
 - **迭代级调度（iteration-level scheduling）**：每生成一个 token 就重新调度一次，序列一结束马上空出位置给新请求，不用等整批最长的那个——这就是「连续」批处理（Orca 论文的思想）。静态批处理（static batching）要等最长的序列跑完，短序列结束后它的槽位一直空着。
@@ -148,7 +148,7 @@
 - `policy="static"` 用同一套代码做出静态批处理基线，保证对比只差调度策略（同样的 kernel、同样的模型）。
 **(c) 语法**：`deque.appendleft` 放回队首；`@dataclass(frozen=True)` + `__post_init__` 做参数校验。
 
-### 2. `ember/engine.py`
+### 2. `rill/engine.py`
 **(a) 骨架**：`LLMEngine.step()` = `schedule()` → `runner.execute()` → `sample()` → 更新每个序列（`num_computed_tokens += n`，需要的话 append 新 token、判断停止条件、`finish` 释放）。`add_request` / `abort` / `generate`（离线批量接口）。
 **(b) 为什么**：引擎是**同步、单线程**的，不知道 HTTP 的存在；Stage 5 的服务器在一个单独线程里循环调用 `step()`。这样引擎可以独立测试，也不会被 asyncio 事件循环卡住（GPU 前向是阻塞调用）。
 **(c) 语法**：`itertools.count()` 生成自增 id；`iter()` + `next()` 按顺序消费采样结果。
@@ -183,9 +183,9 @@ fp16 下 38–43/48 个输出和顺序执行逐 token 相同（batch 形状改�
 ## Stage 4 — 前缀缓存（Prefix caching）
 
 ### 读代码顺序
-`ember/block_manager.py`（后半部分：`match_prefix` / `cache_full_blocks` / `_take_free_block` / `_release`）→ `ember/scheduler.py`（admission 段）→ `ember/engine.py`（`step` 里的 `cache_full_blocks`）→ `tests/test_prefix_cache.py` → `benchmarks/bench_prefix.py`
+`rill/block_manager.py`（后半部分：`match_prefix` / `cache_full_blocks` / `_take_free_block` / `_release`）→ `rill/scheduler.py`（admission 段）→ `rill/engine.py`（`step` 里的 `cache_full_blocks`）→ `tests/test_prefix_cache.py` → `benchmarks/bench_prefix.py`
 
-### 1. `ember/block_manager.py`（前缀缓存部分）
+### 1. `rill/block_manager.py`（前缀缓存部分）
 **(a) 骨架**：每个 `Block` 多了 `block_hash` 和 `token_ids`；`cached: dict[hash → block_id]`；空闲链表从 deque 换成 `OrderedDict`（可以 O(1) 删除中间元素）。`match_prefix(seq)`：新请求到达时，逐个满块算链式哈希去查；`cache_full_blocks(seq)`：每步之后，把新写满的块登记进缓存；`_take_free_block`：从空闲链表头取块，如果它带着缓存内容就驱逐（evict）。
 **(b) 为什么**：
 - **链式哈希** `h_i = hash((h_{i-1}, 本块 tokens))`：一个 token 的 K/V 取决于它前面所有 token，所以两个块「内容相同」必须连前缀也相同。链式哈希把整个前缀编码进去。
@@ -228,9 +228,9 @@ fp16 下 38–43/48 个输出和顺序执行逐 token 相同（batch 形状改�
 ## Stage 5 — 服务层（Serving API）
 
 ### 读代码顺序
-`ember/server/protocol.py` → `ember/server/metrics.py` → `ember/server/async_engine.py` → `ember/server/api.py` → `ember/server/__main__.py` → `tests/tiny_tokenizer.py` → `tests/test_server.py`
+`rill/server/protocol.py` → `rill/server/metrics.py` → `rill/server/async_engine.py` → `rill/server/api.py` → `rill/server/__main__.py` → `tests/tiny_tokenizer.py` → `tests/test_server.py`
 
-### 1. `ember/server/async_engine.py`（核心）
+### 1. `rill/server/async_engine.py`（核心）
 **(a) 骨架**：`AsyncLLMEngine` = 一个**引擎线程**（`_loop`：收件箱 → `engine.step()` → 把每个 `StepOutput` 投递到对应请求的 `asyncio.Queue`）+ 事件循环这边的 `generate()` 异步生成器（发 add 命令 → 等自己的队列 → 增量反分词、停止串检查 → `yield RequestOutput`）。
 **(b) 为什么**：
 - **GPU 前向是阻塞调用**，放在事件循环里会卡住所有 HTTP 连接。所以引擎独占一个线程；**只有这个线程碰引擎**，引擎本身不需要锁。
@@ -242,7 +242,7 @@ fp16 下 38–43/48 个输出和顺序执行逐 token 相同（batch 形状改�
 - **超时**：用 `asyncio.wait_for` 加剩余时间，超时抛 `RequestTimeoutError` → 504。
 **(c) 语法**：异步生成器（`async def` + `yield`）的 `finally` 在 `aclose()` / 被取消 / 正常结束时都会执行；`queue.Queue`（线程安全）vs `asyncio.Queue`（协程安全）。
 
-### 2. `ember/server/api.py`
+### 2. `rill/server/api.py`
 **(a) 骨架**：`create_app()` 返回 FastAPI app：`/v1/completions`、`/v1/chat/completions`、`/v1/models`、`/health`、`/metrics`。`run()` 是两个生成接口共用的骨架；`_stream_body` 生成 SSE（`data: {...}\n\n`，最后 `data: [DONE]`）。lifespan 负责启动/关闭引擎线程。
 **(b) 为什么**：
 - 流式请求**先拿到第一个输出再返回响应头**，这样 429/400 能作为真正的 HTTP 状态码返回（响应头发出后就只能在流里报错了）。代价：响应头在 TTFT 之后才到。
@@ -250,7 +250,7 @@ fp16 下 38–43/48 个输出和顺序执行逐 token 相同（batch 形状改�
 - 错误映射：429 背压、504 超时、503 引擎挂了、400 参数错误、422 schema 校验（FastAPI 自动）。
 **(c) 语法**：`@asynccontextmanager` 写 lifespan；`StreamingResponse(async_gen, media_type="text/event-stream")`。
 
-### 3. `ember/server/metrics.py`
+### 3. `rill/server/metrics.py`
 TTFT、ITL（相邻 token 间隔）、TPOT（首 token 之后平均每 token 时间）、e2e 用 Histogram；队列深度、running 数、in-flight、KV 使用率、前缀命中率用 Gauge；请求数按 finish_reason 分的 Counter。每个 app 一个独立 `CollectorRegistry`，测试里可以起多个 server。
 
 ### 4. 测试为什么起真的 uvicorn
@@ -297,8 +297,8 @@ in-process ASGI transport 模拟不出「客户端关闭 TCP 连接」。`tests/
 起服务器子进程 → 等 `/health` → 预热 → 每个到达率跑一次（每点请求数 = max(30, λ × 40)，保证高负载下能到达稳态）→ 每次之前 `wait_for_quiet` 负载门控 → 重复 3 次 → 关服务器。
 
 ### Stage 6 实测（`results/stage6_serving_*.json`，3 次重复）
-- ember 拐点在 λ=2 到 3 req/s 之间：λ=2 时 TTFT p99 0.47 s，λ=3 时 15.5 s；吞吐平台 ~201 tok/s（~1.74 req/s）。
-- 朴素 HF 服务器峰值 54.1 tok/s → ember **3.7 倍**；Ollama（4-bit Q4_K_M + llama.cpp Metal kernel）217.3 tok/s，ember 达到其 ~93%，但单用户 TPOT Ollama 9 ms vs ember 26 ms。
+- rill 拐点在 λ=2 到 3 req/s 之间：λ=2 时 TTFT p99 0.47 s，λ=3 时 15.5 s；吞吐平台 ~201 tok/s（~1.74 req/s）。
+- 朴素 HF 服务器峰值 54.1 tok/s → rill **3.7 倍**；Ollama（4-bit Q4_K_M + llama.cpp Metal kernel）217.3 tok/s，rill 达到其 ~93%，但单用户 TPOT Ollama 9 ms vs rill 26 ms。
 - **这个压测抓到一个真 bug**：第一次扫描只有 ~128 tok/s。原因是 prefill 块和 decode 混在一个 SDPA 调用里，decode 行被 padding 到 prefill 块长度（1 个 1024 块 + 31 个 decode ≈ 32 倍注意力计算）。改成 decode 行和 prefill 行分组各自 padding 后，混合步从 4479.9 ms 降到 687.5 ms。这也是题目要求「prefill/decode 分开」的真正原因。
 
 ### Stage 6 面试题
@@ -326,9 +326,9 @@ in-process ASGI transport 模拟不出「客户端关闭 TCP 连接」。`tests/
 ## Stage 7 — 采样与 int8 量化（Sampling & weight-only int8）
 
 ### 读代码顺序
-`ember/sampling.py` → `ember/engine.py`（`add_request` 里的 generator）→ `ember/quant.py` → `tests/test_sampling.py` → `tests/test_quant.py` → `benchmarks/bench_quality.py`
+`rill/sampling.py` → `rill/engine.py`（`add_request` 里的 generator）→ `rill/quant.py` → `tests/test_sampling.py` → `tests/test_quant.py` → `benchmarks/bench_quality.py`
 
-### 1. `ember/sampling.py`
+### 1. `rill/sampling.py`
 **(a) 骨架**：`SamplingParams`（temperature / top_p / top_k / seed / max_tokens / ignore_eos + 校验）；`apply_top_k_top_p`（排序 → 按排名去掉 top-k 之外 → 在剩下的里面算 softmax、累加 → 去掉「排在它前面的概率和已经 ≥ p」的 token → scatter 回原顺序）；`sample`（greedy 行直接 argmax；其余行在设备上批量做温度/top-k/top-p，再每行从自己的 `torch.Generator` 取一个均匀随机数 u，在设备上批量 `cumsum` + `searchsorted` 做逆 CDF 采样）。
 **(b) 为什么**：
 - 顺序：温度 → top-k → top-p（和 HF 一致）。top-p 用「前面的累计概率」判断，保证概率最高的 token 永远保留。
@@ -338,7 +338,7 @@ in-process ASGI transport 模拟不出「客户端关闭 TCP 连接」。`tests/
 - 停止串（stop sequences）在服务层基于文本实现（Stage 5），max_tokens 在引擎里。
 **(c) 语法**：`torch.searchsorted(cdf, u)` 返回第一个 ≥ u 的位置；`torch.rand((), generator=g)` 用指定生成器取一个标量；`tensor.scatter_(dim, index, src)` 把排序后的值放回原位置。
 
-### 2. `ember/quant.py`
+### 2. `rill/quant.py`
 **(a) 骨架**：`Int8Linear`：按输出通道对称量化，`scale = max|W_row| / 127`，`Wq = round(W/scale)`；前向调用 `torch._weight_int8pack_mm(x, Wq, scale)`（kernel 内部反量化）。`quantize_int8(model)` 把 28 层里的 4 个投影全部替换。
 **(b) 为什么**：
 - **W8A16（weight-only）**：小 batch decode 受权重读取带宽限制，权重字节数减半理论上能加速；激活保持 fp16，精度损失小。

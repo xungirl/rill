@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import torch
 
-from ember.attention import ContiguousKVCache, NoCacheAttention
-from ember.config import ModelConfig
-from ember.model import Qwen3Model, RMSNorm, RotaryEmbedding
-from ember.simple_generate import generate_greedy
+from rill.attention import ContiguousKVCache, NoCacheAttention
+from rill.config import ModelConfig
+from rill.model import Qwen3Model, RMSNorm, RotaryEmbedding
+from rill.simple_generate import generate_greedy
 
 
 def test_rmsnorm_matches_formula() -> None:

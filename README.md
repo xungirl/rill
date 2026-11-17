@@ -31,6 +31,14 @@ machine, with raw outputs in `results/` (see [BENCHMARK.md](BENCHMARK.md)).
 More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · capacity: [docs/CAPACITY.md](docs/CAPACITY.md) ·
 interview notes (Chinese): [INTERVIEW.md](INTERVIEW.md) · log: [PROGRESS_LOG.md](PROGRESS_LOG.md)
 
+## Diagrams
+
+![Architecture: FastAPI server, thread bridge, engine thread (scheduler, paged KV block manager, sampler) and the Qwen3 model](docs/diagrams/01-architecture.png)
+
+![Results: continuous batching, serving vs HF and Ollama, paged KV utilization, prefix cache, profiled fixes, correctness, int8, caveats](docs/diagrams/02-results.png)
+
+Hand-written SVG sources sit next to the PNGs; `docs/diagrams/render.sh` re-renders them with headless Chrome. Every number comes from `results/`.
+
 ## Project Journey
 
 ### 1. Model from scratch

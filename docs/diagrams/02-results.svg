@@ -1,0 +1,174 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#E8ECF2" stroke-width="1"/>
+    </pattern>
+    <radialGradient id="vignette" cx="50%" cy="40%" r="75%">
+      <stop offset="0%" stop-color="#F7F8FA" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#E3E8EF" stop-opacity="0.35"/>
+    </radialGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#0891B2"/>
+    </marker>
+    <marker id="av" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7C3AED"/>
+    </marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#059669"/>
+    </marker>
+    <style>
+      .t  { font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif; fill: #111827; }
+      .m  { font-family: 'SF Mono', Menlo, Consolas, monospace; fill: #57606A; }
+      .h  { font-size: 21px; font-weight: 700; }
+      .s  { font-size: 14px; }
+      .xs { font-size: 12px; }
+      .panel { fill: #FFFFFF; stroke: #D0D7E2; stroke-width: 1.5; }
+      .chip  { fill: #F3F5F9; stroke: #C9D2DE; stroke-width: 1; }
+      .wire  { stroke: #0891B2; stroke-width: 2; fill: none; }
+      .wirev { stroke: #7C3AED; stroke-width: 2; fill: none; }
+      .wireg { stroke: #059669; stroke-width: 2; fill: none; }
+    </style>
+  </defs>
+  <rect width="1600" height="1000" fill="#F7F8FA"/>
+  <rect width="1600" height="1000" fill="url(#grid)"/>
+  <rect width="1600" height="1000" fill="url(#vignette)"/>
+
+  <!-- header -->
+  <text x="60" y="52" class="m xs" style="fill:#0891B2;letter-spacing:3px">EMBER · 02 / RESULTS</text>
+  <text x="60" y="94" class="t" font-size="36" font-weight="800">Measured on one Apple M2: what each idea bought</text>
+  <text x="60" y="126" class="m s">Qwen3-0.6B · fp16 MPS unless noted · n=3 runs · raw output in results/ · bars drawn to scale</text>
+  <text x="1540" y="52" class="m xs" text-anchor="end">github.com/xungirl/ember</text>
+
+  <!-- A: offline throughput -->
+  <rect x="60" y="160" width="740" height="310" rx="14" class="panel"/>
+  <text x="84" y="196" class="t h">Continuous batching: 48 requests, B=32</text>
+  <text x="84" y="220" class="m xs">output tok/s · output lengths uniform[16, 256] · cv ≤ 1.8%</text>
+  <g class="m s">
+    <text x="84" y="272" style="fill:#111827">continuous</text>
+    <rect x="250" y="254" width="453" height="28" rx="5" fill="#B45309"/>
+    <text x="712" y="273" class="t" font-size="18" font-weight="800" style="fill:#B45309">377.2</text>
+    <text x="84" y="330" style="fill:#111827">static</text>
+    <rect x="250" y="312" width="367" height="28" rx="5" fill="#9AA3B2"/>
+    <text x="626" y="331" style="fill:#374151">305.7</text>
+    <text x="84" y="388" style="fill:#111827">sequential</text>
+    <rect x="250" y="370" width="50" height="28" rx="5" fill="#C9D2DE"/>
+    <text x="310" y="389" style="fill:#374151">41.7</text>
+  </g>
+  <line x1="250" y1="414" x2="730" y2="414" stroke="#D0D7E2"/>
+  <g class="m xs">
+    <text x="250" y="432" text-anchor="middle">0</text>
+    <text x="370" y="432" text-anchor="middle">100</text>
+    <text x="490" y="432" text-anchor="middle">200</text>
+    <text x="610" y="432" text-anchor="middle">300</text>
+    <text x="730" y="432" text-anchor="middle">400</text>
+  </g>
+  <text x="84" y="456" class="m xs" style="fill:#B45309">9.0× sequential · same kernels for all three policies (static is a flag)</text>
+
+  <!-- B: serving -->
+  <rect x="830" y="160" width="710" height="310" rx="14" class="panel"/>
+  <text x="854" y="196" class="t h">HTTP serving plateau (OpenAI API, SSE)</text>
+  <text x="854" y="220" class="m xs">output tok/s at the best arrival rate · n=3</text>
+  <defs>
+    <pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="8" height="8" fill="#F3F5F9"/><line x1="0" y1="0" x2="0" y2="8" stroke="#9AA3B2" stroke-width="3"/>
+    </pattern>
+  </defs>
+  <g class="m s">
+    <text x="854" y="272" style="fill:#111827">ember</text>
+    <rect x="1010" y="254" width="369" height="28" rx="5" fill="#0891B2"/>
+    <text x="1388" y="273" class="t" font-size="18" font-weight="800" style="fill:#0891B2">201.4</text>
+    <text x="854" y="330" style="fill:#111827">naive HF server</text>
+    <rect x="1010" y="312" width="99" height="28" rx="5" fill="#C9D2DE"/>
+    <text x="1118" y="331" style="fill:#374151">54.1</text>
+    <text x="854" y="388" style="fill:#111827">Ollama Q4_K_M</text>
+    <rect x="1010" y="370" width="398" height="28" rx="5" fill="url(#hatch)" stroke="#9AA3B2"/>
+    <text x="1417" y="389" style="fill:#374151">217.3</text>
+  </g>
+  <line x1="1010" y1="414" x2="1450" y2="414" stroke="#D0D7E2"/>
+  <g class="m xs">
+    <text x="1010" y="432" text-anchor="middle">0</text>
+    <text x="1193" y="432" text-anchor="middle">100</text>
+    <text x="1377" y="432" text-anchor="middle">200</text>
+  </g>
+  <text x="854" y="456" class="m xs" style="fill:#0891B2">3.7× naive HF · Ollama is 4-bit llama.cpp Metal (hatched): not like-for-like</text>
+
+  <!-- C: KV utilization -->
+  <rect x="60" y="494" width="470" height="276" rx="14" class="panel"/>
+  <text x="84" y="530" class="t h">Paged KV cache</text>
+  <text x="84" y="554" class="m xs">KV slot utilization · step avg · 64 real requests</text>
+  <g class="m s">
+    <text x="84" y="596" style="fill:#111827">paged, 16-token blocks</text>
+    <rect x="84" y="606" width="300" height="18" rx="9" fill="#EEF2F7"/>
+    <rect x="84" y="606" width="280" height="18" rx="9" fill="#0891B2"/>
+    <text x="396" y="621" class="t" font-size="16" font-weight="800" style="fill:#0891B2">93.3%</text>
+    <text x="84" y="656" style="fill:#111827">reserve prompt + max_tokens</text>
+    <rect x="84" y="666" width="300" height="18" rx="9" fill="#EEF2F7"/>
+    <rect x="84" y="666" width="161" height="18" rx="9" fill="#9AA3B2"/>
+    <text x="396" y="681" style="fill:#374151">53.7%</text>
+    <text x="84" y="716" style="fill:#111827">reserve max_model_len</text>
+    <rect x="84" y="726" width="300" height="18" rx="9" fill="#EEF2F7"/>
+    <rect x="84" y="726" width="22" height="18" rx="9" fill="#C9D2DE"/>
+    <text x="396" y="741" style="fill:#374151">7.3%</text>
+  </g>
+  <text x="84" y="762" class="m xs" style="fill:#0891B2">in a 2 GiB budget: 85 vs 67 vs 9 requests</text>
+
+  <!-- D: prefix cache -->
+  <rect x="555" y="494" width="470" height="276" rx="14" class="panel"/>
+  <text x="579" y="530" class="t h">Prefix cache (shared prompt)</text>
+  <text x="579" y="554" class="m xs">614-token prompts · final code · cv ≤ 0.5%</text>
+  <g class="m s">
+    <text x="579" y="596" style="fill:#111827">TTFT of cache hits</text>
+    <text x="579" y="626">off</text>
+    <rect x="630" y="612" width="300" height="20" rx="4" fill="#C9D2DE"/>
+    <text x="938" y="628" style="fill:#374151">359.8 ms</text>
+    <text x="579" y="656">on</text>
+    <rect x="630" y="642" width="33" height="20" rx="4" fill="#7C3AED"/>
+    <text x="672" y="658" class="t" font-size="16" font-weight="800" style="fill:#7C3AED">39.6 ms · 9.1×</text>
+    <text x="579" y="700" style="fill:#111827">batched throughput, B=16</text>
+    <text x="579" y="730">off</text>
+    <rect x="630" y="716" width="107" height="20" rx="4" fill="#C9D2DE"/>
+    <text x="745" y="732" style="fill:#374151">63.1</text>
+    <text x="579" y="760">on</text>
+    <rect x="630" y="746" width="260" height="20" rx="4" fill="#7C3AED"/>
+    <text x="898" y="762" style="fill:#7C3AED">153.5 tok/s</text>
+  </g>
+
+  <!-- E: bottlenecks -->
+  <rect x="1050" y="494" width="490" height="276" rx="14" class="panel" style="stroke:#059669"/>
+  <text x="1074" y="530" class="t h">Profiled, fixed, re-measured</text>
+  <text x="1074" y="554" class="m xs">old runs kept in results/ next to the new ones</text>
+  <g class="m s">
+    <text x="1074" y="592" style="fill:#111827">K/V gather (56 gathers, B=32)</text>
+    <text x="1074" y="614"><tspan style="fill:#DC2626">81.0 ms</tspan> → <tspan style="fill:#059669;font-weight:700">12.7 ms</tspan> · decode 311.8 → 517.8 tok/s</text>
+    <text x="1074" y="652" style="fill:#111827">mixed prefill + decode step</text>
+    <text x="1074" y="674"><tspan style="fill:#DC2626">4479.9 ms</tspan> → <tspan style="fill:#059669;font-weight:700">687.5 ms</tspan> (split attention)</text>
+    <text x="1074" y="712" style="fill:#111827">top-p sampler, B=32</text>
+    <text x="1074" y="734"><tspan style="fill:#DC2626">235.8</tspan> → <tspan style="fill:#059669;font-weight:700">398.5 tok/s</tspan> (inverse CDF on device)</text>
+  </g>
+  <text x="1074" y="760" class="m xs" style="fill:#059669">each found by timing ops, not guessing</text>
+
+  <!-- correctness tiles -->
+  <rect x="60" y="794" width="470" height="92" rx="12" class="panel"/>
+  <text x="84" y="824" class="m xs" style="fill:#059669;letter-spacing:2px">CORRECTNESS</text>
+  <text x="84" y="852" class="t" font-size="20" font-weight="800" style="fill:#059669">logits diff 0.0 · 8/8 greedy</text>
+  <text x="84" y="874" class="m xs">vs Hugging Face (fp32 CPU; fp16 MPS also 8/8)</text>
+
+  <rect x="555" y="794" width="470" height="92" rx="12" class="panel"/>
+  <text x="579" y="824" class="m xs" style="fill:#DB2777;letter-spacing:2px">INT8 WEIGHTS (W8A16)</text>
+  <text x="579" y="852" class="t" font-size="20" font-weight="800" style="fill:#DB2777">ppl 11.300 vs 11.286 (+0.13%)</text>
+  <text x="579" y="874" class="m xs">weights 1.19 → 0.75 GB · batch-1 decode 42.4 → 51.0 tok/s</text>
+
+  <rect x="1050" y="794" width="490" height="92" rx="12" class="panel"/>
+  <text x="1074" y="824" class="m xs" style="fill:#2563EB;letter-spacing:2px">TESTS</text>
+  <text x="1074" y="852" class="t" font-size="20" font-weight="800" style="fill:#2563EB">70 passed · 10× in a row</text>
+  <text x="1074" y="874" class="m xs">ruff · mypy --strict · hypothesis state machine</text>
+
+  <!-- caveats -->
+  <rect x="60" y="904" width="1480" height="72" rx="12" fill="#FDF2F2" stroke="#F3C4C4"/>
+  <text x="84" y="932" class="m xs" style="fill:#DC2626;letter-spacing:2px">HONEST CAVEATS</text>
+  <text x="84" y="958" class="m s" style="fill:#374151">single-stream TPOT 26 ms vs HF generate 17 ms vs Ollama 9 ms (ember wins only under load) · synthetic load, one laptop · fp16 batching: 38–43/48 outputs = sequential</text>
+</svg>

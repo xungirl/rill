@@ -1,0 +1,164 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#E8ECF2" stroke-width="1"/>
+    </pattern>
+    <radialGradient id="vignette" cx="50%" cy="40%" r="75%">
+      <stop offset="0%" stop-color="#F7F8FA" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#E3E8EF" stop-opacity="0.35"/>
+    </radialGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#0891B2"/>
+    </marker>
+    <marker id="av" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7C3AED"/>
+    </marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#059669"/>
+    </marker>
+    <style>
+      .t  { font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif; fill: #111827; }
+      .m  { font-family: 'SF Mono', Menlo, Consolas, monospace; fill: #57606A; }
+      .h  { font-size: 21px; font-weight: 700; }
+      .s  { font-size: 14px; }
+      .xs { font-size: 12px; }
+      .panel { fill: #FFFFFF; stroke: #D0D7E2; stroke-width: 1.5; }
+      .chip  { fill: #F3F5F9; stroke: #C9D2DE; stroke-width: 1; }
+      .wire  { stroke: #0891B2; stroke-width: 2; fill: none; }
+      .wirev { stroke: #7C3AED; stroke-width: 2; fill: none; }
+      .wireg { stroke: #059669; stroke-width: 2; fill: none; }
+    </style>
+  </defs>
+  <rect width="1600" height="1000" fill="#F7F8FA"/>
+  <rect width="1600" height="1000" fill="url(#grid)"/>
+  <rect width="1600" height="1000" fill="url(#vignette)"/>
+
+  <!-- header -->
+  <text x="60" y="52" class="m xs" style="fill:#0891B2;letter-spacing:3px">EMBER · 01 / ARCHITECTURE</text>
+  <text x="60" y="94" class="t" font-size="36" font-weight="800">An LLM inference engine from scratch (mini-vLLM)</text>
+  <text x="60" y="126" class="m s">Qwen3-0.6B · plain PyTorch · paged KV cache · continuous batching · prefix cache · int8 · Apple M2 (MPS)</text>
+  <text x="1540" y="52" class="m xs" text-anchor="end">github.com/xungirl/ember</text>
+
+  <!-- clients -->
+  <text x="60" y="160" class="m xs" style="letter-spacing:2px">CLIENTS</text>
+  <rect x="60" y="172" width="250" height="150" rx="12" class="panel" style="stroke:#7C3AED"/>
+  <text x="80" y="208" class="t h">HTTP clients</text>
+  <text x="80" y="236" class="m s">OpenAI SDK · curl</text>
+  <text x="80" y="260" class="m s">streaming (SSE)</text>
+  <text x="80" y="296" class="m xs" style="fill:#7C3AED">OpenAI-compatible API</text>
+
+  <!-- fastapi -->
+  <text x="380" y="160" class="m xs" style="letter-spacing:2px">SERVING (asyncio)</text>
+  <rect x="380" y="172" width="560" height="150" rx="12" class="panel" style="stroke:#0891B2"/>
+  <text x="400" y="208" class="t h">FastAPI server</text>
+  <g class="m s">
+    <rect x="400" y="224" width="160" height="32" rx="7" class="chip" style="stroke:#0891B2"/><text x="480" y="245" text-anchor="middle" style="fill:#111827">/v1/completions</text>
+    <rect x="572" y="224" width="210" height="32" rx="7" class="chip" style="stroke:#0891B2"/><text x="677" y="245" text-anchor="middle" style="fill:#111827">/v1/chat/completions</text>
+    <rect x="794" y="224" width="126" height="32" rx="7" class="chip"/><text x="857" y="245" text-anchor="middle" style="fill:#111827">/metrics</text>
+    <text x="400" y="282">▸ tokenize · stop strings · SSE streaming</text>
+    <text x="400" y="306">▸ back-pressure <tspan style="fill:#DC2626">429</tspan> · timeouts <tspan style="fill:#DC2626">504</tspan> · Prometheus</text>
+  </g>
+
+  <!-- bridge -->
+  <text x="1010" y="160" class="m xs" style="letter-spacing:2px">THREAD BRIDGE</text>
+  <rect x="1010" y="172" width="530" height="150" rx="12" class="panel" style="stroke:#B45309"/>
+  <text x="1030" y="208" class="t h">HTTP loop ⇄ engine thread</text>
+  <g class="m s">
+    <text x="1030" y="240">→ inbox: add / abort (thread-safe queue)</text>
+    <text x="1030" y="266">← per-request asyncio.Queue</text>
+    <text x="1046" y="288" class="xs">(loop.call_soon_threadsafe)</text>
+    <text x="1030" y="310" class="xs" style="fill:#B45309">the event loop never blocks on the GPU</text>
+  </g>
+
+  <path d="M310 246 H378" class="wirev" marker-end="url(#av)"/>
+  <path d="M940 246 H1008" class="wire" marker-end="url(#a)"/>
+  <path d="M1275 322 V370" stroke="#B45309" stroke-width="2" fill="none" marker-end="url(#a)"/>
+  <text x="1287" y="352" class="m xs" style="fill:#B45309">requests in · tokens out</text>
+
+  <!-- engine -->
+  <rect x="60" y="372" width="1480" height="296" rx="14" fill="#FFFFFF" stroke="#059669" stroke-width="1.8"/>
+  <text x="80" y="404" class="m xs" style="fill:#059669;letter-spacing:2px">ENGINE THREAD · LLMEngine.step() · every iteration re-decides who runs</text>
+  <g class="m s">
+    <rect x="80"  y="418" width="250" height="36" rx="18" fill="#E7F7EF" stroke="#059669"/><text x="205" y="441" text-anchor="middle" style="fill:#059669">Scheduler.schedule()</text>
+    <rect x="380" y="418" width="270" height="36" rx="18" fill="#E7F7EF" stroke="#059669"/><text x="515" y="441" text-anchor="middle" style="fill:#059669">ModelRunner.execute()</text>
+    <rect x="700" y="418" width="160" height="36" rx="18" fill="#E7F7EF" stroke="#059669"/><text x="780" y="441" text-anchor="middle" style="fill:#059669">sample()</text>
+    <rect x="910" y="418" width="160" height="36" rx="18" fill="#E7F7EF" stroke="#059669"/><text x="990" y="441" text-anchor="middle" style="fill:#059669">update</text>
+  </g>
+  <path d="M330 436 H376" class="wireg" marker-end="url(#ag)"/>
+  <path d="M650 436 H696" class="wireg" marker-end="url(#ag)"/>
+  <path d="M860 436 H906" class="wireg" marker-end="url(#ag)"/>
+  <path d="M1070 436 C1110 436 1110 410 1070 404" class="wireg" stroke-dasharray="4 4"/>
+  <text x="1100" y="441" class="m xs" style="fill:#059669">loop</text>
+
+  <rect x="80" y="476" width="460" height="172" rx="12" class="panel"/>
+  <text x="100" y="508" class="t h">Scheduler</text>
+  <text x="100" y="530" class="m xs" style="fill:#059669">iteration-level (Orca / vLLM style)</text>
+  <g class="m s">
+    <text x="100" y="560">▸ waiting deque · running list</text>
+    <text x="100" y="584">▸ decode-first · per-step token budget</text>
+    <text x="100" y="608">▸ chunked prefill</text>
+    <text x="100" y="632">▸ out of blocks → preempt newest, recompute</text>
+  </g>
+
+  <rect x="560" y="476" width="460" height="172" rx="12" class="panel" style="stroke:#0891B2"/>
+  <text x="580" y="508" class="t h">BlockManager (paged KV)</text>
+  <text x="580" y="530" class="m xs" style="fill:#0891B2">16-token blocks · one flat pool per layer</text>
+  <g class="m s">
+    <text x="580" y="560">▸ block tables per sequence</text>
+    <text x="580" y="584">▸ ref counts · free list = LRU</text>
+    <text x="580" y="608">▸ chained block hashes → prefix cache</text>
+    <text x="580" y="632">▸ allocate_slots(seq, n) for all paths</text>
+  </g>
+
+  <rect x="1040" y="476" width="480" height="172" rx="12" class="panel" style="stroke:#7C3AED"/>
+  <text x="1060" y="508" class="t h">Sampler</text>
+  <text x="1060" y="530" class="m xs" style="fill:#7C3AED">greedy · temperature · top-k / top-p</text>
+  <g class="m s">
+    <text x="1060" y="560">▸ per-request seeds (reproducible)</text>
+    <text x="1060" y="584">▸ top-p via inverse CDF on the device</text>
+    <text x="1060" y="608">▸ LM head only for rows that sample</text>
+    <text x="1060" y="632">▸ top-p B=32: 235.8 → 398.5 tok/s after fix</text>
+  </g>
+
+  <path d="M800 668 V712" class="wire" marker-end="url(#a)"/>
+  <text x="812" y="696" class="m xs" style="fill:#0891B2">packed tokens [T] + PagedAttentionMetadata</text>
+
+  <!-- model -->
+  <rect x="60" y="714" width="1480" height="166" rx="14" fill="#FFFFFF" stroke="#2563EB" stroke-width="1.8"/>
+  <text x="80" y="746" class="m xs" style="fill:#2563EB;letter-spacing:2px">QWEN3-0.6B · OWN MODEL CODE (NO transformers) · MPS fp16 / CPU fp32 · OPTIONAL int8 LINEARS</text>
+  <g class="m s">
+    <rect x="80"   y="762" width="96"  height="34" rx="7" class="chip"/><text x="128"  y="784" text-anchor="middle" style="fill:#111827">embed</text>
+    <text x="190" y="784" style="fill:#2563EB">→ 28 ×</text>
+    <rect x="252"  y="762" width="830" height="34" rx="7" fill="#E8F0FD" stroke="#2563EB"/>
+    <text x="667"  y="784" text-anchor="middle" style="fill:#111827">RMSNorm → GQA attention (q/k RMSNorm, RoPE) → + → RMSNorm → SwiGLU → +</text>
+    <text x="1096" y="784" style="fill:#2563EB">→</text>
+    <rect x="1120" y="762" width="110" height="34" rx="7" class="chip"/><text x="1175" y="784" text-anchor="middle" style="fill:#111827">RMSNorm</text>
+    <text x="1242" y="784" style="fill:#2563EB">→</text>
+    <rect x="1266" y="762" width="254" height="34" rx="7" class="chip"/><text x="1393" y="784" text-anchor="middle" style="fill:#111827">tied LM head</text>
+  </g>
+  <text x="80" y="830" class="t" font-size="16" font-weight="700">PagedAttention per layer</text>
+  <text x="80" y="858" class="m s">index_copy_ new K/V into slots → index_select blocks → decode &amp; prefill groups → padded SDPA (causal + length mask)</text>
+
+  <!-- KPI strip -->
+  <g>
+    <rect x="60"   y="904" width="280" height="70" rx="12" class="panel"/>
+    <text x="80"   y="934" class="t" font-size="22" font-weight="800" style="fill:#059669">diff 0.0</text>
+    <text x="80"   y="958" class="m xs">fp32 logits vs Hugging Face</text>
+    <rect x="360"  y="904" width="280" height="70" rx="12" class="panel"/>
+    <text x="380"  y="934" class="t" font-size="22" font-weight="800" style="fill:#B45309">377 vs 42 tok/s</text>
+    <text x="380"  y="958" class="m xs">continuous vs sequential</text>
+    <rect x="660"  y="904" width="280" height="70" rx="12" class="panel"/>
+    <text x="680"  y="934" class="t" font-size="22" font-weight="800" style="fill:#0891B2">93.3% vs 53.7%</text>
+    <text x="680"  y="958" class="m xs">KV slot utilization</text>
+    <rect x="960"  y="904" width="280" height="70" rx="12" class="panel"/>
+    <text x="980"  y="934" class="t" font-size="22" font-weight="800" style="fill:#7C3AED">360 → 40 ms</text>
+    <text x="980"  y="958" class="m xs">TTFT on prefix-cache hits</text>
+    <rect x="1260" y="904" width="280" height="70" rx="12" class="panel"/>
+    <text x="1280" y="934" class="t" font-size="22" font-weight="800" style="fill:#DB2777">+0.13% ppl</text>
+    <text x="1280" y="958" class="m xs">int8 weights vs fp16</text>
+  </g>
+</svg>
